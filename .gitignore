@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env*
+!.env.example
+*.local
+test-results/
+playwright-report/
+.convex/
+.sites-local/
+*.tsbuildinfo
