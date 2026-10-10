@@ -1,5 +1,5 @@
 import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
 import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus } from 'lucide-react';
 import type { Activity, Invitation, Message, Person, Space, SpaceInput } from '../types';
 import { Avatar, SpaceBadge, Spinner } from './primitives';
@@ -376,7 +376,9 @@ const COLLAPSE_OVER = 330;
 const COLLAPSED_HEIGHT = 250;
 
 function MessageBody({ body, startOpen }: { body: string; startOpen: boolean }) {
+  const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
   const [tall, setTall] = useState(false);
   // A message you've just sent shows in full once; everything else starts collapsed.
   const [open, setOpen] = useState(startOpen);
@@ -385,6 +387,7 @@ function MessageBody({ body, startOpen }: { body: string; startOpen: boolean }) 
     const el = inner.current;
     if (!el) return;
     // offsetHeight is layout size, unaffected by the phone's scaling or the bubble's entry animation.
+    // Measuring in a layout effect means the collapsed size is applied before the first paint.
     const measure = () => setTall(el.offsetHeight > COLLAPSE_OVER);
     measure();
     if (typeof ResizeObserver === 'undefined') return;
@@ -393,20 +396,25 @@ function MessageBody({ body, startOpen }: { body: string; startOpen: boolean }) 
     return () => ro.disconnect();
   }, []);
 
+  // Collapsing is instant (a plain style, so nothing flashes when a chat opens); only expanding animates.
+  function expand() {
+    setOpen(true);
+    const el = outer.current;
+    const full = inner.current?.offsetHeight;
+    if (!el || !full || reduce) return;
+    void animate(el, { height: [COLLAPSED_HEIGHT, full] }, { type: 'spring', stiffness: 240, damping: 32 }).then(() => {
+      el.style.height = '';
+    });
+  }
+
   const collapsed = tall && !open;
   return (
     <>
-      <motion.div
-        className="msg-body"
-        data-collapsed={collapsed || undefined}
-        initial={false}
-        animate={{ height: collapsed ? COLLAPSED_HEIGHT : 'auto' }}
-        transition={{ type: 'spring', stiffness: 240, damping: 32 }}
-      >
+      <div ref={outer} className="msg-body" data-collapsed={collapsed || undefined} style={collapsed ? { height: COLLAPSED_HEIGHT } : undefined}>
         <div ref={inner}>{renderMessage(body)}</div>
-      </motion.div>
+      </div>
       {collapsed && (
-        <button type="button" className="read-more" aria-expanded={false} onClick={() => setOpen(true)}>
+        <button type="button" className="read-more" aria-expanded={false} onClick={expand}>
           Read more
         </button>
       )}
