@@ -2584,59 +2584,65 @@ ol.md-list {
   text-wrap: pretty;
 }
 
-/* Three overlapping circles, like the mark: you, your people, your agents. */
+/* You, your people, your agents: three equal circles on one thread. */
 .circle-row {
+  position: relative;
   display: flex;
   justify-content: center;
-  margin-top: 22px;
+  gap: 18px;
+  margin-top: 24px;
+}
+.circle-row::before {
+  content: '';
+  position: absolute;
+  top: 30px;
+  left: calc(50% - 82px);
+  right: calc(50% - 82px);
+  height: 1px;
+  background: var(--line-2);
 }
 .seat {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  width: 66px;
-}
-.seat + .seat {
-  margin-left: -16px; /* rings overlap a little, like the mark */
+  width: 64px;
 }
 .seat-ring {
   position: relative;
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 0 0 1.5px var(--line-2), 0 8px 20px -12px rgba(28, 28, 26, 0.35);
+  box-shadow: 0 0 0 1px var(--line-2), 0 10px 22px -14px rgba(28, 28, 26, 0.4);
 }
-.seat-ring .avatar {
+.seat-ring > .avatar {
   box-shadow: none;
 }
-.seat-open {
-  background: var(--panel);
+.seat-empty {
   color: var(--ink-3);
-  box-shadow: none;
-  outline: 1.5px dashed var(--ink-4);
-  outline-offset: -1.5px;
-  transition: color 0.15s, background-color 0.15s;
+  transition: color 0.15s, transform 0.16s var(--spring);
 }
-button.seat-open:hover {
-  background: var(--surface);
+button.seat-empty:hover {
   color: var(--ink);
+}
+button.seat-empty:active {
+  transform: scale(0.95);
 }
 .seat-agents {
   grid-auto-flow: column;
-  gap: 0;
 }
 .seat-agents .agent-avatar + .agent-avatar {
-  margin-left: -5px;
-  box-shadow: 0 0 0 2px var(--panel);
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--surface);
 }
 .seat-count {
   position: absolute;
-  right: -2px;
-  bottom: -2px;
+  right: -3px;
+  bottom: -3px;
   min-width: 22px;
   height: 22px;
   padding: 0 5px;
@@ -2652,8 +2658,7 @@ button.seat-open:hover {
 .seat-label {
   font-size: 11.5px;
   font-weight: 560;
-  color: var(--ink-2);
-  white-space: nowrap;
+  color: var(--ink-3);
 }
 
 .chat-empty-actions {

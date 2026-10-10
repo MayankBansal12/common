@@ -1,6 +1,6 @@
 import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus } from 'lucide-react';
 import type { Activity, Invitation, Message, Person, Space, SpaceInput } from '../types';
 import { Avatar, SpaceBadge, Spinner } from './primitives';
 import { MembersDialog } from './MembersDialog';
@@ -331,27 +331,27 @@ function EmptyChat({ space, user, members, onSayHi, onInvite }: { space: Space; 
       <div className="circle-row" aria-label="Who this space is for">
         <motion.div className="seat" {...enter(0)}>
           <span className="seat-ring">
-            <Avatar person={user} size={50} />
+            <Avatar person={user} size={56} />
           </span>
           <span className="seat-label">You</span>
         </motion.div>
         <motion.div className="seat" {...enter(1)}>
           {others.length ? (
-            <span className="seat-ring">
-              <Avatar person={others[0]} size={50} />
+            <span className="seat-ring" title={others.map((o) => o.name).join(', ')}>
+              <Avatar person={others[0]} size={56} />
               {others.length > 1 && <span className="seat-count">+{others.length - 1}</span>}
             </span>
           ) : (
-            <button type="button" className="seat-ring seat-open" onClick={onInvite} aria-label="Invite people">
-              <UserRound size={20} aria-hidden="true" />
+            <button type="button" className="seat-ring seat-empty" onClick={onInvite} aria-label="Invite people" title="Invite people">
+              <UserPlus size={20} aria-hidden="true" />
             </button>
           )}
-          <span className="seat-label">{others.length ? `${others.length} ${others.length === 1 ? 'person' : 'people'}` : 'Your people'}</span>
+          <span className="seat-label">People</span>
         </motion.div>
         <motion.div className="seat" {...enter(2)}>
-          <span className="seat-ring seat-open seat-agents" aria-hidden="true">
-            <AgentAvatar agent="chatgpt" size={22} />
-            <AgentAvatar agent="claude" size={22} />
+          <span className="seat-ring seat-empty seat-agents" aria-hidden="true">
+            <AgentAvatar agent="chatgpt" size={24} />
+            <AgentAvatar agent="claude" size={24} />
           </span>
           <span className="seat-label">Agents</span>
         </motion.div>
