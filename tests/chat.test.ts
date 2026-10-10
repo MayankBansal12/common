@@ -173,3 +173,22 @@ describe('emails', () => {
     expect(mail.text).toContain('https://common.example');
   });
 });
+
+describe('typing', () => {
+  test('shows other members typing, clears on stop or send, and hides from outsiders', async () => {
+    const { owner, guest, stranger, spaceId, join } = await setup(); await join();
+    await guest.mutation(api.messages.setTyping, { spaceId, typing: true });
+    expect(await guest.query(api.messages.typing, { spaceId })).toEqual([]);
+    const seen = await owner.query(api.messages.typing, { spaceId });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ name: 'Guest' });
+    expect(seen[0].expiresAt).toBeGreaterThan(Date.now());
+    await guest.mutation(api.messages.setTyping, { spaceId, typing: false });
+    expect(await owner.query(api.messages.typing, { spaceId })).toEqual([]);
+    await guest.mutation(api.messages.setTyping, { spaceId, typing: true });
+    await guest.mutation(api.messages.send, { spaceId, body: 'Done typing', clientId: 'typing-then-send-1' });
+    expect(await owner.query(api.messages.typing, { spaceId })).toEqual([]);
+    await expect(stranger.mutation(api.messages.setTyping, { spaceId, typing: true })).rejects.toThrow('access');
+    await expect(stranger.query(api.messages.typing, { spaceId })).rejects.toThrow('access');
+  });
+});

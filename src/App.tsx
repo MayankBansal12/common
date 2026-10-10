@@ -62,8 +62,8 @@ export default function App() {
 
 const noop = async () => {};
 export const emptyProps: CommonUIProps = {
-  screen: 'loading', user: null, spaces: [], activeSpace: null, messages: [], members: [], invitations: [], pendingInvitations: [], activities: [], isOnline: true, isLoadingMessages: false, hasMoreMessages: false, error: null,
-  emailStep: 'email', emailAddress: '', authBusy: false, authAvailable: { google: false, email: false }, onGoogleSignIn: noop, onEmailSignIn: noop, onVerifyCode: noop, onBackToEmail() {}, onSignOut: noop, onCreateSpace: async () => '', onUpdateSpace: noop, onSelectSpace() {}, onSendMessage: noop, onRetryMessage() {}, onLoadMoreMessages() {}, onInviteMember: noop, onRemoveMember: noop, onRevokeInvite: noop, onAcceptInvitation: noop, onUpdateProfile: noop, onDismissError() {},
+  screen: 'loading', user: null, spaces: [], activeSpace: null, messages: [], members: [], invitations: [], pendingInvitations: [], activities: [], typing: [], isOnline: true, isLoadingMessages: false, hasMoreMessages: false, error: null,
+  emailStep: 'email', emailAddress: '', authBusy: false, authAvailable: { google: false, email: false }, onGoogleSignIn: noop, onEmailSignIn: noop, onVerifyCode: noop, onBackToEmail() {}, onSignOut: noop, onCreateSpace: async () => '', onUpdateSpace: noop, onSelectSpace() {}, onSendMessage: noop, onTyping() {}, onRetryMessage() {}, onLoadMoreMessages() {}, onInviteMember: noop, onRemoveMember: noop, onRevokeInvite: noop, onAcceptInvitation: noop, onUpdateProfile: noop, onDismissError() {},
 };
 type AuthProps = Pick<CommonUIProps, 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onSignOut'>;
 
@@ -78,6 +78,8 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
   const members = useQuery(api.members.list, args) ?? [];
   const invitations = useQuery(api.members.invitations, args) ?? [];
   const activities = useQuery(api.members.activity, args) ?? [];
+  const typing = useQuery(api.messages.typing, args) ?? [];
+  const setTyping = useMutation(api.messages.setTyping);
   const paginated = usePaginatedQuery(api.messages.list, args, { initialNumItems: 50 });
   const connection = useConvexConnectionState();
   const isOnline = connection.isWebSocketConnected;
@@ -135,11 +137,12 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
   const confirmedIds = new Set(paginated.results.map(m => m.clientId));
   const messages: Message[] = [...[...paginated.results].reverse(), ...outbox.filter(m => m.spaceId === spaceId && !confirmedIds.has(m.clientId))].sort((a, b) => a.createdAt - b.createdAt);
   return <CommonUI {...emptyProps} {...authProps}
-    screen={activeSpace ? 'chat' : 'spaces'} user={user} spaces={spaces} activeSpace={activeSpace} messages={messages} members={members} invitations={invitations} pendingInvitations={pendingInvitations} activities={activities}
+    screen={activeSpace ? 'chat' : 'spaces'} user={user} spaces={spaces} activeSpace={activeSpace} messages={messages} members={members} invitations={invitations} pendingInvitations={pendingInvitations} activities={activities} typing={typing}
     isOnline={isOnline} isLoadingMessages={paginated.status === 'LoadingFirstPage'} hasMoreMessages={paginated.status === 'CanLoadMore'} error={error} onDismissError={() => setError(null)}
     onSelectSpace={select}
     onCreateSpace={({ image, ...input }) => perform(async () => create({ ...input, imageId: await upload(image) }))}
     onUpdateSpace={async ({ image, ...input }) => { if (spaceId) await perform(async () => updateSpace({ ...input, spaceId, imageId: await upload(image) })); }}
+    onTyping={(id, isTyping) => { void setTyping({ spaceId: id as Id<'spaces'>, typing: isTyping }).catch(() => {}); }}
     onSendMessage={async body => {
       const trimmed = body.trim();
       if (!spaceId || !trimmed) return;

@@ -92,6 +92,7 @@ export default function CommonUI(props: CommonUIProps) {
                       user={user}
                       space={props.activeSpace}
                       messages={props.messages}
+                      typing={props.typing}
                       members={props.members}
                       invitations={props.invitations}
                       activities={props.activities}
@@ -100,6 +101,7 @@ export default function CommonUI(props: CommonUIProps) {
                       hasMoreMessages={props.hasMoreMessages}
                       onBack={() => props.onSelectSpace(null)}
                       onSendMessage={props.onSendMessage}
+                      onTyping={props.onTyping}
                       onRetryMessage={props.onRetryMessage}
                       onLoadMoreMessages={props.onLoadMoreMessages}
                       onInviteMember={props.onInviteMember}
