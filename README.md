@@ -38,7 +38,7 @@ Google OAuth configuration for the current development deployment:
 
 `JWT_PRIVATE_KEY` and `JWKS` are configured for the development deployment. For a fresh deployment, `node scripts/configure-auth.mjs` generates and uploads signing keys without printing them. Set `SITE_URL` in the Convex environment to the frontend origin you choose. Use separate signing keys per deployment.
 
-Google and email sign-ins link through verified email addresses. Google profiles explicitly require `email_verified`; email sign-in uses an eight-digit code expiring after ten minutes. Invitations appear after the recipient signs in with the matching verified email. Invitations expire after seven days. If email delivery is configured, scheduled invitation emails retry transient failures with a stable Resend idempotency key; invitations remain visible in the app if email delivery fails.
+Google and email sign-ins link through verified email addresses. Google profiles explicitly require `email_verified`; email sign-in uses a six-digit code expiring after ten minutes. Invitations appear after the recipient signs in with the matching verified email. Invitations expire after seven days. If email delivery is configured, scheduled invitation emails retry transient failures with a stable Resend idempotency key; invitations remain visible in the app if email delivery fails.
 
 Official references: [Convex Auth manual setup](https://labs.convex.dev/auth/setup/manual), [Google OAuth](https://labs.convex.dev/auth/config/oauth/google), [email codes](https://labs.convex.dev/auth/config/otps).
 

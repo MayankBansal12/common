@@ -35,6 +35,39 @@ export function BrandMark({ size = 22, className }: { size?: number; className?:
   );
 }
 
+/** The mark assembling itself: three circles drift in from apart, then the shared centre fills. */
+export function AnimatedMark({ size = 70, delay = 0.2, strokeWidth = 1.3 }: { size?: number; delay?: number; strokeWidth?: number }) {
+  const id = useId().replace(/:/g, '');
+  const [a, b, c] = MARK_CIRCLES;
+  const from = MARK_CIRCLES.map((p) => ({ cx: 12 + (p.cx - 12) * 2.4, cy: 12 + (p.cy - 12) * 2.4 }));
+  const ease = [0.2, 0.7, 0.2, 1] as const;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" overflow="visible" aria-hidden="true">
+      <defs>
+        <clipPath id={`am-a-${id}`}>
+          <circle cx={a.cx} cy={a.cy} r={MARK_R} />
+        </clipPath>
+        <clipPath id={`am-b-${id}`} clipPath={`url(#am-a-${id})`}>
+          <circle cx={b.cx} cy={b.cy} r={MARK_R} />
+        </clipPath>
+      </defs>
+      <motion.circle
+        cx={c.cx}
+        cy={c.cy}
+        r={MARK_R}
+        fill="currentColor"
+        clipPath={`url(#am-b-${id})`}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4, delay: delay + 0.85 }}
+      />
+      {MARK_CIRCLES.map((p, i) => (
+        <motion.circle key={i} r={MARK_R} stroke="currentColor" strokeWidth={strokeWidth} initial={from[i]} animate={{ cx: p.cx, cy: p.cy }} transition={{ duration: 1, ease, delay }} />
+      ))}
+    </svg>
+  );
+}
+
 type AvatarEngine = typeof import('./avatarEngine');
 let engine: AvatarEngine | null = null;
 let engineLoad: Promise<AvatarEngine> | null = null;

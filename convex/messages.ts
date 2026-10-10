@@ -1,4 +1,5 @@
-import { mutation, query } from './_generated/server';
+import { mutation, query, type MutationCtx } from './_generated/server';
+import type { Id } from './_generated/dataModel';
 import { paginationOptsValidator } from 'convex/server';
 import { v, ConvexError } from 'convex/values';
 import { person, rateLimit, requireMember } from './lib/access';
@@ -27,5 +28,35 @@ export const send = mutation({ args: { spaceId: v.id('spaces'), body: v.string()
   const id = await ctx.db.insert('messages', { spaceId, senderId: user._id, actorKind: 'human', color: membership.color, body: text, clientId, sequence });
   await ctx.db.patch(spaceId, { messageCount: sequence, lastMessage: text.slice(0, 120), updatedAt: Date.now() });
   await ctx.db.patch(membership._id, { lastReadSequence: sequence });
+  await clearTyping(ctx, spaceId, user._id);
   return id;
+}});
+
+// Typing: clients send `typing: true` every few seconds while composing and `false` when they stop.
+// A row counts for TYPING_TTL after its last refresh, so a closed tab simply times out.
+export const TYPING_TTL = 6_000;
+async function clearTyping(ctx: MutationCtx, spaceId: Id<'spaces'>, userId: Id<'users'>) {
+  const row = await ctx.db.query('typing').withIndex('by_space_user', q => q.eq('spaceId', spaceId).eq('userId', userId)).unique();
+  if (row) await ctx.db.delete(row._id);
+}
+export const setTyping = mutation({ args: { spaceId: v.id('spaces'), typing: v.boolean() }, handler: async (ctx, { spaceId, typing }) => {
+  const { user } = await requireMember(ctx, spaceId);
+  if (!typing) return clearTyping(ctx, spaceId, user._id);
+  const row = await ctx.db.query('typing').withIndex('by_space_user', q => q.eq('spaceId', spaceId).eq('userId', user._id)).unique();
+  const now = Date.now();
+  // Refreshed moments ago: nothing to do, which also caps how often a client can write here.
+  if (row && row.expiresAt - TYPING_TTL > now - 1_500) return;
+  if (row) await ctx.db.patch(row._id, { expiresAt: now + TYPING_TTL });
+  else await ctx.db.insert('typing', { spaceId, userId: user._id, expiresAt: now + TYPING_TTL });
+}});
+/** Other members currently marked as typing. Expiry is checked by the client, so this query stays cacheable. */
+export const typing = query({ args: { spaceId: v.id('spaces') }, handler: async (ctx, { spaceId }) => {
+  const { user } = await requireMember(ctx, spaceId);
+  const rows = await ctx.db.query('typing').withIndex('by_space', q => q.eq('spaceId', spaceId)).collect();
+  const others = rows.filter(r => r.userId !== user._id);
+  return Promise.all(others.map(async r => {
+    const who = await person(ctx, r.userId);
+    const membership = await ctx.db.query('memberships').withIndex('by_space_user', q => q.eq('spaceId', spaceId).eq('userId', r.userId)).unique();
+    return membership ? { ...who, color: membership.color ?? who.color, expiresAt: r.expiresAt } : null;
+  })).then(list => list.filter(t => t !== null));
 }});

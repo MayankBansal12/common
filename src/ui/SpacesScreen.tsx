@@ -3,7 +3,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { motion } from 'motion/react';
 import { Check, LogOut, PenLine, Plus, Users } from 'lucide-react';
 import type { PendingInvitation, Person, ProfileInput, Space, SpaceInput } from '../types';
-import { Avatar, BrandMark, SpaceBadge, Spinner } from './primitives';
+import { AnimatedMark, Avatar, BrandMark, SpaceBadge, Spinner } from './primitives';
 import { ProfileSheet, SpaceSheet } from './SpaceDialogs';
 import { useScreenContainer } from './Device';
 import { plainText } from './markdown';
@@ -131,50 +131,54 @@ export function SpacesScreen(p: Props) {
             </section>
           )}
 
-          <section aria-labelledby="spaces-h" className="section">
-            <h2 id="spaces-h" className="section-label">
-              Spaces
-            </h2>
-            <ul className="list">
-              {spaces.map((s, i) => (
-                <motion.li
-                  key={s.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.22, delay: Math.min(i, 8) * 0.025, ease: [0.2, 0.7, 0.2, 1] }}
-                >
-                  <button type="button" className="space-row" onClick={() => p.onSelectSpace(s.id)}>
-                    <SpaceBadge symbol={s.symbol} name={s.name} color={s.color} imageUrl={s.imageUrl} size={36} />
-                    <span className="row-main">
-                      <span className="row-title">{s.name}</span>
-                      <span className="row-sub">{s.lastMessage ? plainText(s.lastMessage) : ' '}</span>
+          {spaces.length === 0 ? (
+            <FirstSpace user={p.user} hasInvites={p.pendingInvitations.length > 0} onCreate={() => setCreateOpen(true)} />
+          ) : (
+            <section aria-labelledby="spaces-h" className="section">
+              <h2 id="spaces-h" className="section-label">
+                Spaces
+              </h2>
+              <ul className="list">
+                {spaces.map((s, i) => (
+                  <motion.li
+                    key={s.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.22, delay: Math.min(i, 8) * 0.025, ease: [0.2, 0.7, 0.2, 1] }}
+                  >
+                    <button type="button" className="space-row" onClick={() => p.onSelectSpace(s.id)}>
+                      <SpaceBadge symbol={s.symbol} name={s.name} color={s.color} imageUrl={s.imageUrl} size={36} />
+                      <span className="row-main">
+                        <span className="row-title">{s.name}</span>
+                        <span className="row-sub">{s.lastMessage ? plainText(s.lastMessage) : ' '}</span>
+                      </span>
+                      <span className="row-side">
+                        <span className="row-time">{shortStamp(s.updatedAt)}</span>
+                        {s.unread > 0 ? (
+                          <span className="unread" aria-label={`${s.unread} unread`}>
+                            {s.unread > 99 ? '99+' : s.unread}
+                          </span>
+                        ) : (
+                          <span className="row-count" aria-label={`${s.memberCount} members`}>
+                            <Users size={11} aria-hidden="true" />
+                            {s.memberCount}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  </motion.li>
+                ))}
+                <li>
+                  <button type="button" className="space-row new-row" onClick={() => setCreateOpen(true)}>
+                    <span className="new-badge" aria-hidden="true">
+                      <Plus size={16} />
                     </span>
-                    <span className="row-side">
-                      <span className="row-time">{shortStamp(s.updatedAt)}</span>
-                      {s.unread > 0 ? (
-                        <span className="unread" aria-label={`${s.unread} unread`}>
-                          {s.unread > 99 ? '99+' : s.unread}
-                        </span>
-                      ) : (
-                        <span className="row-count" aria-label={`${s.memberCount} members`}>
-                          <Users size={11} aria-hidden="true" />
-                          {s.memberCount}
-                        </span>
-                      )}
-                    </span>
+                    <span className="row-title">New space</span>
                   </button>
-                </motion.li>
-              ))}
-              <li>
-                <button type="button" className="space-row new-row" onClick={() => setCreateOpen(true)}>
-                  <span className="new-badge" aria-hidden="true">
-                    <Plus size={16} />
-                  </span>
-                  <span className="row-title">New space</span>
-                </button>
-              </li>
-            </ul>
-          </section>
+                </li>
+              </ul>
+            </section>
+          )}
         </div>
       </div>
 
@@ -191,6 +195,42 @@ export function SpacesScreen(p: Props) {
         }}
       />
       <ProfileSheet open={profileOpen} onOpenChange={setProfileOpen} user={p.user} onSave={p.onUpdateProfile} />
+    </div>
+  );
+}
+
+/** No spaces yet: the mark assembles, one clear action, and a note on where invitations appear. */
+function FirstSpace({ user, hasInvites, onCreate }: { user: Person; hasInvites: boolean; onCreate: () => void }) {
+  const first = user.name.trim().split(/\s+/)[0];
+  const rise = (i: number) => ({
+    initial: { opacity: 0, y: 10 },
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 0.45, delay: 0.25 + i * 0.08, ease: [0.2, 0.7, 0.2, 1] as const },
+  });
+  return (
+    <div className="first-space">
+      <motion.span className="first-space-mark" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 20 }}>
+        <AnimatedMark size={52} delay={0.15} strokeWidth={1.4} />
+      </motion.span>
+      <motion.h2 className="first-space-title" {...rise(0)}>
+        {first ? `Welcome, ${first}` : 'Welcome to Common'}
+      </motion.h2>
+      <motion.p className="first-space-body" {...rise(1)}>
+        {hasInvites
+          ? 'Accept an invitation above, or start a space of your own for you, your people and your agents.'
+          : 'Start a space for you, your people and your agents. You can invite people by email once it’s made.'}
+      </motion.p>
+      <motion.div {...rise(2)}>
+        <button type="button" className="btn btn-primary btn-xl first-space-cta" onClick={onCreate}>
+          <Plus size={18} aria-hidden="true" />
+          Create your first space
+        </button>
+      </motion.div>
+      {!hasInvites && (
+        <motion.p className="first-space-note" {...rise(3)}>
+          Waiting on an invite? It will show up here when someone invites <strong>{user.email}</strong>.
+        </motion.p>
+      )}
     </div>
   );
 }
