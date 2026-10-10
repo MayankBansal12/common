@@ -286,6 +286,17 @@ function Welcome(p: {
           </button>
         )}
         {p.nothingAvailable && <p className="field-note warn">Sign-in isn’t configured for this deployment yet.</p>}
+        <p className="onb-legal">
+          By continuing, you agree to the{' '}
+          <a href="/terms" target="_blank" rel="noopener">
+            Terms
+          </a>{' '}
+          and{' '}
+          <a href="/privacy" target="_blank" rel="noopener">
+            Privacy Policy
+          </a>
+          .
+        </p>
         <AnimatePresence>{p.error && <InlineError key={p.error}>{p.error}</InlineError>}</AnimatePresence>
       </motion.div>
     </div>

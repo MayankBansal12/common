@@ -993,6 +993,23 @@ fieldset {
   gap: 10px;
   padding: 14px 22px calc(12px + var(--sab));
 }
+.onb-legal {
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.onb-legal a {
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 2px;
+}
+.menu-item.menu-link {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  text-decoration: none;
+}
 .onb-cta .inline-error,
 .onb-cta .field-note {
   text-align: center;
