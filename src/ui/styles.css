@@ -2610,8 +2610,51 @@ ol.md-list {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  .splash-ripple {
+  .splash-ripple,
+  .skeleton {
     animation: none;
+  }
+}
+
+/* ───────── Loading placeholders ───────── */
+
+.skeleton {
+  display: block;
+  height: 10px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(28, 28, 26, 0.06) 25%, rgba(28, 28, 26, 0.1) 45%, rgba(28, 28, 26, 0.06) 65%);
+  background-size: 300% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+.skeleton-label {
+  width: 52px;
+  height: 9px;
+  margin: 6px 12px 12px;
+}
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+.skeleton-badge {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 32%;
+}
+.skeleton-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
   }
 }
 

@@ -68,7 +68,8 @@ export const emptyProps: CommonUIProps = {
 type AuthProps = Pick<CommonUIProps, 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onSignOut'>;
 
 function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps }) {
-  const spaces = useQuery(api.spaces.list) ?? [];
+  const spaceList = useQuery(api.spaces.list);
+  const spaces = spaceList ?? [];
   const pendingInvitations = useQuery(api.members.pending) ?? [];
   const [selected, setSelected] = useState<string | null>(() => window.location.hash.startsWith('#space=') ? window.location.hash.slice(7) : null);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +138,8 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
   const confirmedIds = new Set(paginated.results.map(m => m.clientId));
   const messages: Message[] = [...[...paginated.results].reverse(), ...outbox.filter(m => m.spaceId === spaceId && !confirmedIds.has(m.clientId))].sort((a, b) => a.createdAt - b.createdAt);
   return <CommonUI {...emptyProps} {...authProps}
-    screen={activeSpace ? 'chat' : 'spaces'} user={user} spaces={spaces} activeSpace={activeSpace} messages={messages} members={members} invitations={invitations} pendingInvitations={pendingInvitations} activities={activities} typing={typing}
+    // Reopening a chat (#space=…) keeps the splash until that space has loaded, rather than flashing the list.
+    screen={selected && spaceList === undefined ? 'loading' : activeSpace ? 'chat' : 'spaces'} isLoadingSpaces={spaceList === undefined} user={user} spaces={spaces} activeSpace={activeSpace} messages={messages} members={members} invitations={invitations} pendingInvitations={pendingInvitations} activities={activities} typing={typing}
     isOnline={isOnline} isLoadingMessages={paginated.status === 'LoadingFirstPage'} hasMoreMessages={paginated.status === 'CanLoadMore'} error={error} onDismissError={() => setError(null)}
     onSelectSpace={select}
     onCreateSpace={({ image, ...input }) => perform(async () => create({ ...input, imageId: await upload(image) }))}

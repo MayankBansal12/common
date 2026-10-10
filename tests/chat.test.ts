@@ -194,15 +194,15 @@ describe('typing', () => {
 });
 
 describe('invitee privacy', () => {
-  test('masks invitee emails for other members and names people once they join', async () => {
+  test('masks invitee emails for everyone and names people once they join', async () => {
     const { t, owner, guest, spaceId, join } = await setup(); await join();
     const third = await t.run(ctx => ctx.db.insert('users', { name: 'Third', email: 'third.person@example.com', emailVerificationTime: Date.now() }));
     await owner.mutation(api.members.invite, { spaceId, email: 'third.person@example.com' });
     const invitedFor = async (who: typeof owner) => (await who.query(api.members.activity, { spaceId })).find(a => a.kind === 'member_invited' && a.subject?.includes('th'))?.subject;
-    expect(await invitedFor(owner)).toBe('third.person@example.com');
+    expect(await invitedFor(owner)).toBe('th•••@example.com');
     expect(await invitedFor(guest)).toBe('th•••@example.com');
     expect((await guest.query(api.members.invitations, { spaceId }))[0].email).toBe('th•••@example.com');
-    expect((await owner.query(api.members.invitations, { spaceId }))[0].email).toBe('third.person@example.com');
+    expect((await owner.query(api.members.invitations, { spaceId }))[0]).toMatchObject({ email: 'th•••@example.com', canRevoke: true });
     const invitationId = (await owner.query(api.members.invitations, { spaceId }))[0].id;
     await t.withIdentity({ subject: third }).mutation(api.members.accept, { invitationId: invitationId as never });
     const guestInvite = (await guest.query(api.members.activity, { spaceId })).find(a => a.kind === 'member_invited' && a.subject === 'Third');

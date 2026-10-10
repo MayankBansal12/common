@@ -12,9 +12,9 @@ export const invitations = query({ args: { spaceId: v.id('spaces') }, handler: a
   const { user, membership } = await requireMember(ctx, spaceId);
   const pending = await ctx.db.query('invitations').withIndex('by_space', q => q.eq('spaceId', spaceId)).collect();
   return pending.filter(i => i.expiresAt > Date.now()).map(i => {
-    // Only people who can act on an invitation (its sender, or the owner) see the full address.
+    // Pending addresses are masked for everyone, the inviter included; revoking works by id.
     const canRevoke = membership.role === 'owner' || i.inviterId === user._id;
-    return { id: i._id, email: canRevoke ? i.email : maskEmail(i.email), createdAt: i._creationTime, canRevoke };
+    return { id: i._id, email: maskEmail(i.email), createdAt: i._creationTime, canRevoke };
   });
 }});
 export const pending = query({ args: {}, handler: async ctx => {
@@ -85,10 +85,10 @@ export const remove = mutation({ args: { spaceId: v.id('spaces'), userId: v.id('
   await ctx.db.insert('activities', { spaceId, actorId: user._id, kind: 'member_removed', subject: (await person(ctx, userId)).name });
 }});
 export const activity = query({ args: { spaceId: v.id('spaces') }, handler: async (ctx, { spaceId }) => {
-  const { user } = await requireMember(ctx, spaceId);
+  await requireMember(ctx, spaceId);
   const events = await ctx.db.query('activities').withIndex('by_space', q => q.eq('spaceId', spaceId)).order('desc').take(50);
   // Invite events store the invitee's email. Everyone in the space reads this feed, so show the
-  // person's name once they've joined, otherwise a masked address; only the inviter sees it in full.
+  // person's name once they've joined, and otherwise a masked address, for everyone.
   const members = await ctx.db.query('memberships').withIndex('by_space', q => q.eq('spaceId', spaceId)).collect();
   const nameByEmail = new Map<string, string>();
   for (const m of members) {
@@ -98,7 +98,7 @@ export const activity = query({ args: { spaceId: v.id('spaces') }, handler: asyn
   const subjectFor = (e: (typeof events)[number]) => {
     if (!e.subject || (e.kind !== 'member_invited' && e.kind !== 'invite_revoked')) return e.subject;
     const email = e.subject.trim().toLowerCase();
-    return nameByEmail.get(email) ?? (e.actorId === user._id ? e.subject : maskEmail(email));
+    return nameByEmail.get(email) ?? maskEmail(email);
   };
   return Promise.all(events.map(async e => ({ id: e._id, kind: e.kind, actorName: (await person(ctx, e.actorId)).name, subject: subjectFor(e), createdAt: e._creationTime })));
 }});
