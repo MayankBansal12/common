@@ -62,6 +62,8 @@ const TIME_REVEAL = 76;
 // Messages from one person within a few minutes stack into a group; longer gaps get a time divider.
 const GROUP_GAP = 5 * 60_000;
 const DIVIDER_GAP = 15 * 60_000;
+// Under the avatar there's only room for a first name; the full name shows on hover.
+const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 const breaksAt = (a: Message, b: Message) => dayKey(a.createdAt) !== dayKey(b.createdAt) || b.createdAt - a.createdAt > DIVIDER_GAP;
 const NEAR_BOTTOM = 48;
 
@@ -407,7 +409,7 @@ const MessageRow = memo(function MessageRow({
             <>
               <Avatar person={m.sender} size={28} />
               <span className="msg-name" title={m.sender.name}>
-                {m.sender.name}
+                {firstName(m.sender.name)}
               </span>
             </>
           )}
