@@ -14,17 +14,26 @@
   "dependencies": {
     "@auth/core": "^0.37.0",
     "@convex-dev/auth": "^0.0.90",
-    "@dicebear/core": "^9.2.4",
     "@dicebear/collection": "^9.2.4",
+    "@dicebear/core": "^9.2.4",
+    "@lexical/code": "^0.52.0",
+    "@lexical/link": "^0.52.0",
+    "@lexical/list": "^0.52.0",
+    "@lexical/markdown": "^0.52.0",
+    "@lexical/react": "^0.52.0",
+    "@lexical/rich-text": "^0.52.0",
+    "@lexical/utils": "^0.52.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "convex": "^1.31.0",
+    "lexical": "^0.52.0",
     "lucide-react": "^0.468.0",
     "motion": "^12.23.24",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@playwright/test": "^1.56.0",
     "@types/node": "^22.18.0",
     "@types/react": "^19.2.0",
@@ -33,7 +42,6 @@
     "convex-test": "^0.0.41",
     "typescript": "~5.9.3",
     "vite": "^7.1.9",
-    "vitest": "^3.2.4",
-    "@edge-runtime/vm": "^5.0.0"
+    "vitest": "^3.2.4"
   }
 }

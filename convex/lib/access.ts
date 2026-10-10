@@ -40,6 +40,21 @@ export async function rateLimit(ctx: MutationCtx, key: string, max: number, wind
 export async function person(ctx: QueryCtx | MutationCtx, userId: Id<'users'>, includeEmail = false) {
   const user = await ctx.db.get(userId);
   const profile = await ctx.db.query('profiles').withIndex('by_user', q => q.eq('userId', userId)).unique();
-  return { id: userId, name: profile?.name || user?.name || user?.email?.split('@')[0] || 'Member', email: includeEmail ? user?.email ?? '' : '', avatarSeed: profile?.avatarSeed ?? userId, color: profile?.color ?? hashColor(userId) };
+  return { id: userId, name: profile?.name || user?.name || user?.email?.split('@')[0] || 'Member', email: includeEmail ? user?.email ?? '' : '', avatarSeed: profile?.avatarSeed ?? userId, color: profile?.color ?? hashColor(userId), imageUrl: await imageUrl(ctx, profile?.imageId) };
+}
+export async function imageUrl(ctx: QueryCtx | MutationCtx, id: Id<'_storage'> | undefined) {
+  return id ? (await ctx.storage.getUrl(id)) ?? undefined : undefined;
+}
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** An uploaded file may become a profile or space photo only if it is a reasonably sized image. */
+export async function checkImage(ctx: MutationCtx, id: Id<'_storage'>) {
+  const file = await ctx.db.system.get(id);
+  if (!file || !file.contentType?.startsWith('image/') || file.size > MAX_IMAGE_BYTES) throw new ConvexError('Choose an image under 5 MB.');
+  return id;
+}
+/** `undefined` keeps the current photo, `null` removes it. */
+export async function nextImage(ctx: MutationCtx, next: Id<'_storage'> | null | undefined, current: Id<'_storage'> | undefined) {
+  if (next === undefined) return current;
+  return next === null ? undefined : checkImage(ctx, next);
 }
 export function hashColor(seed: string) { return Array.from(seed).reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0) % 8; }

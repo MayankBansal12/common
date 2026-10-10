@@ -97,7 +97,8 @@ describe('message reliability', () => {
   });
   test('validates text and ids server-side', async () => {
     const { owner, spaceId } = await setup();
-    for (const body of ['   ', 'a'.repeat(8001)]) await expect(owner.mutation(api.messages.send, { spaceId, body, clientId: 'validation-msg-001' })).rejects.toThrow('8,000');
+    for (const body of ['   ', 'a'.repeat(2001)]) await expect(owner.mutation(api.messages.send, { spaceId, body, clientId: 'validation-msg-001' })).rejects.toThrow('2,000');
+    await expect(owner.mutation(api.messages.send, { spaceId, body: 'a'.repeat(2000), clientId: 'validation-msg-002' })).resolves.toBeTruthy();
     await expect(owner.mutation(api.messages.send, { spaceId, body: 'Hi', clientId: 'x' })).rejects.toThrow('identifier');
   });
   test('preserves message history, stable ordering, pagination and unread counts', async () => {
@@ -118,5 +119,57 @@ describe('message reliability', () => {
     for (let i = 0; i < 30; i++) await owner.mutation(api.messages.send, { spaceId, body: 'Text', clientId: `rate-limited-msg-${i}` });
     await expect(owner.mutation(api.messages.send, { spaceId, body: 'Text', clientId: 'rate-limited-msg-30' })).rejects.toThrow('too fast');
     await expect(owner.mutation(api.messages.send, { spaceId, body: 'Text', clientId: 'rate-limited-msg-0' })).resolves.toBeTruthy();
+  });
+});
+
+describe('space details and photos', () => {
+  test('members edit a space and the change is recorded; outsiders cannot', async () => {
+    const { guest, stranger, spaceId, join } = await setup(); await join();
+    await guest.mutation(api.spaces.update, { spaceId, name: 'Studio B', symbol: '🎧', color: 3 });
+    expect((await guest.query(api.spaces.list))[0]).toMatchObject({ name: 'Studio B', symbol: '🎧', color: 3 });
+    expect((await guest.query(api.members.activity, { spaceId }))[0]).toMatchObject({ kind: 'space_updated', subject: 'Studio B', actorName: 'Guest' });
+    await expect(stranger.mutation(api.spaces.update, { spaceId, name: 'Mine', symbol: '✳', color: 0 })).rejects.toThrow('access');
+    await expect(guest.mutation(api.spaces.update, { spaceId, name: ' ', symbol: '✳', color: 0 })).rejects.toThrow('characters');
+    await expect(guest.mutation(api.spaces.update, { spaceId, name: 'Ok', symbol: '✳', color: 9 })).rejects.toThrow('color');
+  });
+  test('accepts image uploads and avatar choices, keeps them unless changed, and rejects other files', async () => {
+    const { t, owner, spaceId } = await setup();
+    // convex-test omits the Content-Type that real uploads record, so set it as an upload would.
+    const store = (blob: Blob) => t.run(async ctx => {
+      const id = await ctx.storage.store(blob);
+      await (ctx.db.patch as (id: unknown, value: object) => Promise<void>)(id, { contentType: blob.type });
+      return id;
+    });
+    const image = await store(new Blob(['png'], { type: 'image/png' }));
+    const text = await store(new Blob(['hello'], { type: 'text/plain' }));
+    await owner.mutation(api.users.update, { name: 'Owner', imageId: image });
+    expect((await owner.query(api.users.me))?.imageUrl).toBeTruthy();
+    await owner.mutation(api.users.update, { name: 'Owner Renamed' });
+    expect(await owner.query(api.users.me)).toMatchObject({ name: 'Owner Renamed', imageUrl: expect.any(String) });
+    await owner.mutation(api.users.update, { name: 'Owner', imageId: null });
+    expect((await owner.query(api.users.me))?.imageUrl).toBeUndefined();
+    await expect(owner.mutation(api.users.update, { name: 'Owner', imageId: text })).rejects.toThrow('image');
+    await owner.mutation(api.users.update, { name: 'Owner', avatarSeed: 'k3x9q2' });
+    expect(await owner.query(api.users.me)).toMatchObject({ avatarSeed: 'k3x9q2' });
+    await owner.mutation(api.users.update, { name: 'Owner Again' });
+    expect(await owner.query(api.users.me)).toMatchObject({ name: 'Owner Again', avatarSeed: 'k3x9q2' });
+    await expect(owner.mutation(api.users.update, { name: 'Owner', avatarSeed: ' ' })).rejects.toThrow('avatar');
+    await owner.mutation(api.spaces.update, { spaceId, name: 'The studio', symbol: '✳', color: 0, imageId: image });
+    expect((await owner.query(api.spaces.list))[0].imageUrl).toBeTruthy();
+    const created = await owner.mutation(api.spaces.create, { name: 'Pics', symbol: '✳', color: 1, imageId: image });
+    expect((await owner.query(api.spaces.list)).find(s => s.id === created)?.imageUrl).toBeTruthy();
+    await expect(owner.mutation(api.spaces.create, { name: 'Nope', symbol: '✳', color: 1, imageId: text })).rejects.toThrow('image');
+  });
+});
+
+describe('emails', () => {
+  test('invitation emails escape user-provided names and keep subjects on one line', async () => {
+    const { invitationEmail } = await import('../convex/lib/email');
+    const mail = invitationEmail({ spaceName: '<b>Studio</b>\nBcc: x', inviterName: 'Tara & "co"', siteUrl: 'https://common.example' });
+    expect(mail.subject).toBe('Tara & "co" invited you to <b>Studio</b> Bcc: x on Common');
+    expect(mail.html).toContain('&lt;b&gt;Studio&lt;/b&gt;');
+    expect(mail.html).toContain('Tara &amp; &quot;co&quot;');
+    expect(mail.html).not.toContain('<b>Studio</b>');
+    expect(mail.text).toContain('https://common.example');
   });
 });

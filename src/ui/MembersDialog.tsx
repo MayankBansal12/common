@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, Mail, Sparkles, UserMinus, UserPlus, UserRoundCheck, UserRoundX, X } from 'lucide-react';
+import { Check, Mail, PenLine, Sparkles, UserMinus, UserPlus, UserRoundCheck, UserRoundX, X } from 'lucide-react';
 import type { Activity, Invitation, Person, Space } from '../types';
 import { Avatar, InlineError, Sheet, SpaceBadge, Spinner } from './primitives';
 import { ago, errorText, isEmail } from './format';
@@ -24,6 +24,14 @@ type Tab = 'members' | 'activity';
 export function MembersDialog(p: Props) {
   const [tab, setTab] = useState<Tab>('members');
   const tabsRef = useRef<HTMLDivElement>(null);
+  const [ink, setInk] = useState<{ x: number; width: number } | null>(null);
+
+  // Measured with offsetLeft/offsetWidth, which ignore transforms: the phone is scaled to fit the
+  // window and the sheet slides, so page-space measurements (as in layout animations) land wrong.
+  useLayoutEffect(() => {
+    const el = tabsRef.current?.querySelector<HTMLElement>(`[data-tab="${tab}"]`);
+    if (el) setInk({ x: el.offsetLeft, width: el.offsetWidth });
+  }, [tab, p.open, p.members.length]);
 
   useEffect(() => {
     if (p.open) setTab('members');
@@ -42,7 +50,7 @@ export function MembersDialog(p: Props) {
       open={p.open}
       onOpenChange={p.onOpenChange}
       className="members-sheet"
-      titleAddon={<SpaceBadge symbol={p.space.symbol} name={p.space.name} color={p.space.color} size={26} />}
+      titleAddon={<SpaceBadge symbol={p.space.symbol} name={p.space.name} color={p.space.color} imageUrl={p.space.imageUrl} size={26} />}
       title={p.space.name}
     >
       <div className="tabs" role="tablist" aria-label="Space details" ref={tabsRef} onKeyDown={onTabKey}>
@@ -61,9 +69,17 @@ export function MembersDialog(p: Props) {
           >
             {t === 'members' ? 'Members' : 'Activity'}
             {t === 'members' && <span className="tab-count">{p.members.length}</span>}
-            {tab === t && <motion.span layoutId="tab-ink" className="tab-ink" transition={{ type: 'spring', stiffness: 500, damping: 38 }} />}
           </button>
         ))}
+        {ink && (
+          <motion.span
+            className="tab-ink"
+            aria-hidden="true"
+            initial={false}
+            animate={{ x: ink.x, width: ink.width }}
+            transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+          />
+        )}
       </div>
 
       <div className="sheet-scroll">
@@ -273,6 +289,7 @@ const ACTIVITY_ICON = {
   member_joined: UserRoundCheck,
   member_removed: UserRoundX,
   invite_revoked: X,
+  space_updated: PenLine,
 } as const;
 
 function activityText(a: Activity) {
@@ -288,6 +305,8 @@ function activityText(a: Activity) {
       return <><strong>{a.actorName}</strong> removed{s}</>;
     case 'invite_revoked':
       return <><strong>{a.actorName}</strong> revoked the invite for{s || ' someone'}</>;
+    case 'space_updated':
+      return a.subject ? <><strong>{a.actorName}</strong> renamed the space to{s}</> : <><strong>{a.actorName}</strong> updated the space</>;
   }
 }
 

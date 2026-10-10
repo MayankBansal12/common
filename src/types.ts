@@ -1,9 +1,12 @@
-export type Person = { id: string; name: string; email: string; avatarSeed: string; color: number; role?: 'owner' | 'member' };
-export type Space = { id: string; name: string; symbol: string; color: number; memberCount: number; unread: number; lastMessage?: string; updatedAt: number };
+export type Person = { id: string; name: string; email: string; avatarSeed: string; color: number; role?: 'owner' | 'member'; imageUrl?: string };
+export type Space = { id: string; name: string; symbol: string; color: number; imageUrl?: string; memberCount: number; unread: number; lastMessage?: string; updatedAt: number };
 export type Message = { id: string; clientId: string; body: string; sender: Person; createdAt: number; status?: 'sending' | 'sent' | 'failed' };
 export type Invitation = { id: string; email: string; createdAt: number; canRevoke?: boolean };
 export type PendingInvitation = { id: string; spaceName: string; inviterName: string };
-export type Activity = { id: string; kind: 'space_created' | 'member_invited' | 'member_joined' | 'member_removed' | 'invite_revoked'; actorName: string; subject?: string; createdAt: number };
+export type Activity = { id: string; kind: 'space_created' | 'member_invited' | 'member_joined' | 'member_removed' | 'invite_revoked' | 'space_updated'; actorName: string; subject?: string; createdAt: number };
+/** `image`: a new photo to upload, `null` to remove the current one, or omitted to keep it. */
+export type SpaceInput = { name: string; symbol: string; color: number; image?: Blob | null };
+export type ProfileInput = { name: string; image?: Blob | null; avatarSeed?: string };
 export interface CommonUIProps {
   screen: 'loading' | 'login' | 'spaces' | 'chat';
   user: Person | null;
@@ -22,13 +25,14 @@ export interface CommonUIProps {
   emailAddress: string;
   authBusy: boolean;
   authAvailable: { google: boolean; email: boolean };
-  preview?: boolean;
   onGoogleSignIn: () => Promise<void>;
   onEmailSignIn: (email: string) => Promise<void>;
   onVerifyCode: (code: string) => Promise<void>;
   onBackToEmail: () => void;
   onSignOut: () => Promise<void>;
-  onCreateSpace: (name: string, symbol: string, color: number) => Promise<void>;
+  /** Resolves with the new space's id; the UI opens it once the sheet has closed. */
+  onCreateSpace: (input: SpaceInput) => Promise<string>;
+  onUpdateSpace: (input: SpaceInput) => Promise<void>;
   onSelectSpace: (id: string | null) => void;
   onSendMessage: (body: string) => Promise<void>;
   onRetryMessage: (clientId: string) => void;
@@ -37,6 +41,6 @@ export interface CommonUIProps {
   onRemoveMember: (userId: string) => Promise<void>;
   onRevokeInvite: (id: string) => Promise<void>;
   onAcceptInvitation: (id: string) => Promise<void>;
-  onUpdateProfile: (name: string) => Promise<void>;
+  onUpdateProfile: (input: ProfileInput) => Promise<void>;
   onDismissError: () => void;
 }

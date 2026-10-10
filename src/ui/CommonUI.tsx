@@ -2,6 +2,7 @@ import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { X } from 'lucide-react';
 import type { CommonUIProps } from '../types';
 import { BrandMark } from './primitives';
+import { Device } from './Device';
 import { LoginScreen } from './LoginScreen';
 import { SpacesScreen } from './SpacesScreen';
 import { ChatScreen } from './ChatScreen';
@@ -17,9 +18,9 @@ export default function CommonUI(props: CommonUIProps) {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className={`common-root${props.preview ? ' has-preview' : ''}`}>
-        {props.preview && <span className="preview-badge">Preview</span>}
+      <div className="common-root">
 
+        <Device>
         <AnimatePresence mode="wait" initial={false}>
           {view === 'loading' ? (
             <motion.div
@@ -104,6 +105,7 @@ export default function CommonUI(props: CommonUIProps) {
                       onInviteMember={props.onInviteMember}
                       onRemoveMember={props.onRemoveMember}
                       onRevokeInvite={props.onRevokeInvite}
+                      onUpdateSpace={props.onUpdateSpace}
                     />
                   )}
                 </motion.div>
@@ -111,6 +113,7 @@ export default function CommonUI(props: CommonUIProps) {
             </motion.main>
           )}
         </AnimatePresence>
+        </Device>
       </div>
     </MotionConfig>
   );
