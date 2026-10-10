@@ -1,7 +1,8 @@
 import { SITE } from '../../src/site';
 
 // Transactional email through Resend. Configured by AUTH_RESEND_KEY and AUTH_EMAIL
-// (a sender on a domain verified in Resend, e.g. `Common <hello@example.com>`).
+// (a sender on a domain verified in Resend, e.g. `Common <hello@example.com>`), plus an
+// optional AUTH_REPLY_TO for where replies should land.
 
 export const emailConfigured = () => Boolean(process.env.AUTH_RESEND_KEY && process.env.AUTH_EMAIL);
 
@@ -13,7 +14,15 @@ export async function sendEmail(message: { to: string; subject: string; text: st
       'Content-Type': 'application/json',
       ...(message.idempotencyKey && { 'Idempotency-Key': message.idempotencyKey }),
     },
-    body: JSON.stringify({ from: process.env.AUTH_EMAIL, to: [message.to], subject: message.subject, text: message.text, html: message.html }),
+    body: JSON.stringify({
+      from: process.env.AUTH_EMAIL,
+      to: [message.to],
+      // Optional: replies go here (any address) instead of the sending address.
+      ...(process.env.AUTH_REPLY_TO?.trim() && { reply_to: process.env.AUTH_REPLY_TO.trim() }),
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+    }),
   });
   return response.ok;
 }
