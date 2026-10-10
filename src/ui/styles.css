@@ -1854,10 +1854,14 @@ ol.md-list {
   background: #f8dedb;
 }
 
+.chat-foot {
+  position: relative;
+  flex: none;
+}
 .jump {
   position: absolute;
   left: 50%;
-  bottom: 74px;
+  bottom: calc(100% + 10px);
   translate: -50% 0;
   z-index: 4;
   display: inline-flex;

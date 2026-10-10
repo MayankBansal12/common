@@ -266,37 +266,40 @@ export function ChatScreen(p: Props) {
         </div>
       </div>
 
-      <AnimatePresence>
-        {showJump && (
-          <motion.button
-            type="button"
-            className="jump"
-            onClick={jumpToLatest}
-            aria-label={unseen ? `${unseen} new messages, jump to latest` : 'Jump to latest'}
-            title="Jump to latest"
-            initial={{ opacity: 0, y: 8, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.9 }}
-            transition={{ type: 'spring', stiffness: 520, damping: 32 }}
-          >
-            <ArrowDown size={14} aria-hidden="true" />
-            {unseen > 0 && <span className="jump-count">{unseen > 99 ? '99+' : unseen}</span>}
-          </motion.button>
-        )}
-      </AnimatePresence>
+      {/* The jump button floats just above the composer, however tall the composer grows. */}
+      <div className="chat-foot">
+        <AnimatePresence>
+          {showJump && (
+            <motion.button
+              type="button"
+              className="jump"
+              onClick={jumpToLatest}
+              aria-label={unseen ? `${unseen} new messages, jump to latest` : 'Jump to latest'}
+              title="Jump to latest"
+              initial={{ opacity: 0, y: 8, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.9 }}
+              transition={{ type: 'spring', stiffness: 520, damping: 32 }}
+            >
+              <ArrowDown size={14} aria-hidden="true" />
+              {unseen > 0 && <span className="jump-count">{unseen > 99 ? '99+' : unseen}</span>}
+            </motion.button>
+          )}
+        </AnimatePresence>
 
-      <Suspense fallback={<ComposerFallback spaceName={space.name} />}>
-        <Composer
-          key={`${user.id}:${space.id}`}
-          draftKey={`common:draft:${user.id}:${space.id}`}
-          spaceName={space.name}
-          onSend={(body) => {
-            stickNext.current = true;
-            return p.onSendMessage(body);
-          }}
-          isQueued={(body) => latest.current.some((m) => m.sender.id === user.id && m.body === body && m.status !== 'sent')}
-        />
-      </Suspense>
+        <Suspense fallback={<ComposerFallback spaceName={space.name} />}>
+          <Composer
+            key={`${user.id}:${space.id}`}
+            draftKey={`common:draft:${user.id}:${space.id}`}
+            spaceName={space.name}
+            onSend={(body) => {
+              stickNext.current = true;
+              return p.onSendMessage(body);
+            }}
+            isQueued={(body) => latest.current.some((m) => m.sender.id === user.id && m.body === body && m.status !== 'sent')}
+          />
+        </Suspense>
+      </div>
 
       <SpaceSheet open={editOpen} onOpenChange={setEditOpen} space={space} onSubmit={p.onUpdateSpace} />
       <MembersDialog
