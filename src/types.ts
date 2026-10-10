@@ -22,6 +22,8 @@ export interface CommonUIProps {
   typing: TypingPerson[];
   isOnline: boolean;
   isLoadingMessages: boolean;
+  /** The spaces list hasn't arrived yet (show placeholders, not the first-space welcome). */
+  isLoadingSpaces?: boolean;
   hasMoreMessages: boolean;
   error: string | null;
   emailStep: 'email' | 'code';

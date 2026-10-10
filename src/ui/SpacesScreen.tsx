@@ -10,6 +10,8 @@ import { plainText } from './markdown';
 import { errorText, shortStamp } from './format';
 
 type Props = {
+  /** The list hasn't loaded yet: show placeholders rather than the first-space welcome. */
+  isLoading?: boolean;
   user: Person;
   spaces: Space[];
   pendingInvitations: PendingInvitation[];
@@ -131,7 +133,9 @@ export function SpacesScreen(p: Props) {
             </section>
           )}
 
-          {spaces.length === 0 ? (
+          {p.isLoading && spaces.length === 0 ? (
+            <SpacesSkeleton />
+          ) : spaces.length === 0 ? (
             <FirstSpace user={p.user} hasInvites={p.pendingInvitations.length > 0} onCreate={() => setCreateOpen(true)} />
           ) : (
             <section aria-labelledby="spaces-h" className="section">
@@ -231,6 +235,24 @@ function FirstSpace({ user, hasInvites, onCreate }: { user: Person; hasInvites: 
           Waiting on an invite? It will show up here when someone invites <strong>{user.email}</strong>.
         </motion.p>
       )}
+    </div>
+  );
+}
+
+/** Placeholder rows while the spaces list loads, shaped like the real ones. */
+function SpacesSkeleton() {
+  return (
+    <div className="section" aria-busy="true" aria-label="Loading spaces">
+      <span className="skeleton skeleton-label" />
+      {[0.72, 0.5, 0.62].map((w, i) => (
+        <div key={i} className="skeleton-row" style={{ animationDelay: `${i * 0.12}s` }}>
+          <span className="skeleton skeleton-badge" />
+          <span className="skeleton-lines">
+            <span className="skeleton" style={{ width: `${w * 60}%` }} />
+            <span className="skeleton" style={{ width: `${w * 100}%` }} />
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

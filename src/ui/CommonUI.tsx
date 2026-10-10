@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { X } from 'lucide-react';
 import type { CommonUIProps } from '../types';
@@ -14,7 +15,10 @@ const ease = [0.2, 0.7, 0.2, 1] as const;
 export default function CommonUI(props: CommonUIProps) {
   const { screen, user } = props;
   const authed = (screen === 'spaces' || screen === 'chat') && user;
-  const view = !authed ? (screen === 'loading' ? 'loading' : 'login') : screen === 'chat' && props.activeSpace ? 'chat' : 'spaces';
+  const ready = !authed ? (screen === 'loading' ? 'loading' : 'login') : screen === 'chat' && props.activeSpace ? 'chat' : 'spaces';
+  const splash = useSplashGate(ready === 'loading');
+  // While a shown splash finishes its minimum time, keep it on screen even though loading is done.
+  const view = splash.holding ? 'loading' : ready;
   const shell = view === 'loading' || view === 'login' ? 'auth' : 'app';
 
   return (
@@ -35,7 +39,7 @@ export default function CommonUI(props: CommonUIProps) {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <Splash />
+              {splash.visible && <Splash />}
             </motion.div>
           ) : (
             <motion.main
@@ -81,6 +85,7 @@ export default function CommonUI(props: CommonUIProps) {
                       user={user}
                       spaces={props.spaces}
                       pendingInvitations={props.pendingInvitations}
+                      isLoading={props.isLoadingSpaces}
                       isOnline={props.isOnline}
                       onSelectSpace={props.onSelectSpace}
                       onCreateSpace={props.onCreateSpace}
@@ -121,6 +126,44 @@ export default function CommonUI(props: CommonUIProps) {
       </div>
     </MotionConfig>
   );
+}
+
+// Fast loads shouldn't flash a splash; slow ones shouldn't cut its animation short.
+const SPLASH_DELAY = 250;
+const SPLASH_MIN = 1100;
+
+/**
+ * Decides when the splash shows: only once loading has lasted SPLASH_DELAY, and, once shown, for at
+ * least SPLASH_MIN so the mark finishes assembling. Before the delay the screen stays quietly blank.
+ */
+function useSplashGate(loading: boolean) {
+  const [visible, setVisible] = useState(false);
+  const [holding, setHolding] = useState(false);
+  const shownAt = useRef(0);
+  useEffect(() => {
+    if (loading) {
+      setHolding(false);
+      if (visible) return;
+      const t = setTimeout(() => {
+        shownAt.current = Date.now();
+        setVisible(true);
+      }, SPLASH_DELAY);
+      return () => clearTimeout(t);
+    }
+    if (!visible) return;
+    const left = SPLASH_MIN - (Date.now() - shownAt.current);
+    if (left <= 0) {
+      setVisible(false);
+      return;
+    }
+    setHolding(true);
+    const t = setTimeout(() => {
+      setHolding(false);
+      setVisible(false);
+    }, left);
+    return () => clearTimeout(t);
+  }, [loading, visible]);
+  return { visible, holding };
 }
 
 /** Loading: the mark assembles as in onboarding, the name and short line follow, and a soft ripple keeps it alive. */
