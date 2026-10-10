@@ -1,6 +1,7 @@
 import Google from '@auth/core/providers/google';
 import { Email } from '@convex-dev/auth/providers/Email';
 import { convexAuth } from '@convex-dev/auth/server';
+import { emailConfigured, sendEmail, signInCodeEmail } from './lib/email';
 
 const email = Email({
   id: 'resend-otp',
@@ -17,12 +18,7 @@ const email = Email({
     return code;
   },
   async sendVerificationRequest({ identifier, token }) {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: process.env.AUTH_EMAIL, to: [identifier], subject: `${token} is your Common sign-in code`, text: `Your Common sign-in code is ${token}.\n\nIt expires in 10 minutes. If you did not request it, you can ignore this email.` }),
-    });
-    if (!response.ok) throw new Error('Unable to send your sign-in code. Please try again.');
+    if (!(await sendEmail({ to: identifier, ...signInCodeEmail(token) }))) throw new Error('Unable to send your sign-in code. Please try again.');
   },
 });
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
@@ -32,6 +28,6 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         return { id: profile.sub, name: profile.name, email: profile.email?.trim().toLowerCase(), emailVerified: profile.email_verified === true };
       },
     })] : []),
-    ...(process.env.AUTH_RESEND_KEY && process.env.AUTH_EMAIL ? [email] : []),
+    ...(emailConfigured() ? [email] : []),
   ],
 });

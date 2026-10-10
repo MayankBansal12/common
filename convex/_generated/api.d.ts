@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
+import type * as lib_email from "../lib/email.js";
 import type * as members from "../members.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   http: typeof http;
   "lib/access": typeof lib_access;
+  "lib/email": typeof lib_email;
   members: typeof members;
   messages: typeof messages;
   notifications: typeof notifications;

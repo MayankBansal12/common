@@ -161,3 +161,15 @@ describe('space details and photos', () => {
     await expect(owner.mutation(api.spaces.create, { name: 'Nope', symbol: '✳', color: 1, imageId: text })).rejects.toThrow('image');
   });
 });
+
+describe('emails', () => {
+  test('invitation emails escape user-provided names and keep subjects on one line', async () => {
+    const { invitationEmail } = await import('../convex/lib/email');
+    const mail = invitationEmail({ spaceName: '<b>Studio</b>\nBcc: x', inviterName: 'Tara & "co"', siteUrl: 'https://common.example' });
+    expect(mail.subject).toBe('Tara & "co" invited you to <b>Studio</b> Bcc: x on Common');
+    expect(mail.html).toContain('&lt;b&gt;Studio&lt;/b&gt;');
+    expect(mail.html).toContain('Tara &amp; &quot;co&quot;');
+    expect(mail.html).not.toContain('<b>Studio</b>');
+    expect(mail.text).toContain('https://common.example');
+  });
+});

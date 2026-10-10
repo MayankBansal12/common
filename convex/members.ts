@@ -2,6 +2,7 @@ import { mutation, query } from './_generated/server';
 import { internal } from './_generated/api';
 import { ConvexError, v } from 'convex/values';
 import { hashColor, normalizeEmail, person, rateLimit, requireMember, requireOwner, requireUser } from './lib/access';
+import { emailConfigured } from './lib/email';
 export const list = query({ args: { spaceId: v.id('spaces') }, handler: async (ctx, { spaceId }) => {
   await requireMember(ctx, spaceId);
   const members = await ctx.db.query('memberships').withIndex('by_space', q => q.eq('spaceId', spaceId)).collect();
@@ -39,7 +40,7 @@ export const invite = mutation({ args: { spaceId: v.id('spaces'), email: v.strin
   if (old) await ctx.db.delete(old._id);
   const invitationId = await ctx.db.insert('invitations', { spaceId, email: address, inviterId: user._id, expiresAt: Date.now() + 7 * 86_400_000 });
   await ctx.db.insert('activities', { spaceId, actorId: user._id, kind: 'member_invited', subject: address });
-  if (process.env.AUTH_RESEND_KEY && process.env.AUTH_EMAIL) await ctx.scheduler.runAfter(0, internal.notifications.invitation, { invitationId, attempt: 0 });
+  if (emailConfigured()) await ctx.scheduler.runAfter(0, internal.notifications.invitation, { invitationId, attempt: 0 });
   return invitationId;
 }});
 export const accept = mutation({ args: { invitationId: v.id('invitations') }, handler: async (ctx, { invitationId }) => {
