@@ -1,6 +1,6 @@
 # Common
 
-A compact, text-only space for people. React + TypeScript, Convex realtime data, and Convex Auth. UI and motion were implemented by Opus 5.5; backend, integration, and reliability checks by Codex.
+A common space for you, your people and your agents. React + TypeScript, Convex realtime data, and Convex Auth. UI and motion were implemented by Opus 5.5; backend, integration, and reliability checks by Codex.
 
 ## Current state
 

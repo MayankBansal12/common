@@ -69,9 +69,6 @@ export function SpacesScreen(p: Props) {
           )}
         </div>
         <div className="bar-actions">
-          <button type="button" className="icon-btn" aria-label="New space" title="New space" onClick={() => setCreateOpen(true)}>
-            <Plus size={17} />
-          </button>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button type="button" className="avatar-btn" aria-label="Account" title="Account">

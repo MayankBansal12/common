@@ -6,6 +6,7 @@ import { Avatar, SpaceBadge, Spinner } from './primitives';
 import { MembersDialog } from './MembersDialog';
 import { AgentAvatar } from './agents';
 import { useAmbientTint } from './Device';
+import { SITE } from '../site';
 import { SpaceSheet } from './SpaceDialogs';
 import { tone } from './palette';
 import { isJumboEmoji, renderMessage } from './markdown';
@@ -326,7 +327,7 @@ function EmptyChat({ space, user, members, onSayHi, onInvite }: { space: Space; 
     <motion.div className="chat-empty" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.2, 0.7, 0.2, 1] }}>
       <SpaceBadge symbol={space.symbol} name={space.name} color={space.color} imageUrl={space.imageUrl} size={68} />
       <h2 className="chat-empty-title">{space.name}</h2>
-      <p className="chat-empty-body">A common space for you, your people and your agents.</p>
+      <p className="chat-empty-body">{SITE.tagline}</p>
 
       <div className="circle-row" aria-label="Who this space is for">
         <motion.div className="seat" {...enter(0)}>

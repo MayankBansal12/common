@@ -1,3 +1,5 @@
+import { SITE } from '../../src/site';
+
 // Transactional email through Resend. Configured by AUTH_RESEND_KEY and AUTH_EMAIL
 // (a sender on a domain verified in Resend, e.g. `Common <hello@example.com>`).
 
@@ -61,7 +63,7 @@ export function invitationEmail({ spaceName, inviterName, siteUrl }: { spaceName
     html: layout({
       preheader: `${inviter} invited you to ${space}`,
       body: `<h1 style="margin:0;font-size:22px;line-height:1.25;letter-spacing:-0.02em">${esc(inviter)} invited you to <span style="white-space:nowrap">${esc(space)}</span></h1>
-<p style="margin:10px 0 0;font-size:15px;line-height:1.5;color:#57554f">Common is a small, shared space for you, your people and your agents. Sign in with this email address and the invitation will be waiting for you.</p>
+<p style="margin:10px 0 0;font-size:15px;line-height:1.5;color:#57554f">${esc(SITE.tagline)} Sign in with this email address and the invitation will be waiting for you.</p>
 ${siteUrl ? button('Join on Common', siteUrl) : ''}`,
       footer: `This invitation expires in 7 days. If you weren't expecting it, you can ignore this email.`,
     }),
