@@ -84,7 +84,6 @@ export function LoginScreen(p: Props) {
 
   const busy = p.authBusy || pending !== null;
   const shownError = localError ?? p.error;
-  const nothingAvailable = !p.authAvailable.google && !p.authAvailable.email;
 
   function go(next: Stage) {
     setLocalError(null);
@@ -135,7 +134,6 @@ export function LoginScreen(p: Props) {
               busy={busy}
               pending={pending}
               available={p.authAvailable}
-              nothingAvailable={nothingAvailable}
               error={shownError}
               onGoogle={() => void attempt('google', p.onGoogleSignIn)}
               onEmail={() => go('email')}
@@ -177,14 +175,14 @@ export function LoginScreen(p: Props) {
 function Welcome(p: {
   busy: boolean;
   pending: string | null;
-  available: { google: boolean; email: boolean };
-  nothingAvailable: boolean;
+  available: { google: boolean; email: boolean } | null;
   error: string | null;
   onGoogle: () => void;
   onEmail: () => void;
 }) {
   const [[index, dir], setPage] = useState<[number, number]>([0, 1]);
   const [autoplay, setAutoplay] = useState(true);
+  const [held, setHeld] = useState(false);
   const reduce = useReducedMotion();
   const slide = SLIDES[index];
   useAmbientTint(slide.tint);
@@ -194,13 +192,12 @@ function Welcome(p: {
     setPage(([i]) => [(i + step + SLIDES.length) % SLIDES.length, step]);
   };
 
-  useEffect(() => {
-    if (!autoplay || reduce) return;
-    const t = setTimeout(() => paginate(1, false), AUTOPLAY_MS);
-    return () => clearTimeout(t);
-  }, [index, autoplay, reduce]);
+  // The active dot's fill is the timer: the slide advances when it finishes, so the two never drift,
+  // and holding the carousel (like a story) pauses both.
+  const playing = autoplay && !reduce;
 
   function onDragEnd(_: unknown, info: PanInfo) {
+    setHeld(false);
     const swipe = info.offset.x + info.velocity.x * 0.2;
     if (swipe < -60) paginate(1);
     else if (swipe > 60) paginate(-1);
@@ -211,7 +208,17 @@ function Welcome(p: {
     <div className="onb-welcome">
       <motion.div className="onb-glow" animate={{ background: `radial-gradient(120% 70% at 50% 0%, ${t.bg} 0%, ${t.bg}00 72%)` }} transition={{ duration: 0.8 }} />
 
-      <motion.div className="onb-carousel" drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={0.18} onDragEnd={onDragEnd}>
+      <motion.div
+        className="onb-carousel"
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={0.18}
+        onDragEnd={onDragEnd}
+        onPointerDown={() => setHeld(true)}
+        onPointerUp={() => setHeld(false)}
+        onPointerCancel={() => setHeld(false)}
+        onPointerLeave={() => setHeld(false)}
+      >
         {/* Unlike the stage around it, the first slide animates in, art and all. */}
         <AnimatePresence custom={dir} mode="popLayout">
           <motion.div
@@ -241,7 +248,7 @@ function Welcome(p: {
         </AnimatePresence>
       </motion.div>
 
-      <div className="onb-dots" role="tablist" aria-label="Introduction">
+      <div className="onb-dots" role="tablist" aria-label="Introduction" data-held={held || undefined}>
         {SLIDES.map((s, i) => (
           <button
             key={i}
@@ -252,14 +259,14 @@ function Welcome(p: {
             className="onb-dot"
             onClick={() => i !== index && paginate(i - index)}
           >
-            <span className="onb-dot-fill">
-              {i === index && autoplay && !reduce && (
-                <motion.span
+            <span className="onb-dot-track">
+              {i === index && (
+                <span
                   key={index}
                   className="onb-dot-progress"
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: 1 }}
-                  transition={{ duration: AUTOPLAY_MS / 1000, ease: 'linear' }}
+                  data-playing={playing || undefined}
+                  style={{ animationDuration: `${AUTOPLAY_MS}ms` }}
+                  onAnimationEnd={() => paginate(1, false)}
                 />
               )}
             </span>
@@ -268,24 +275,15 @@ function Welcome(p: {
       </div>
 
       <motion.div className="onb-cta" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.45, ease }}>
-        {p.available.google && (
-          <button type="button" className="btn btn-primary btn-block btn-xl" disabled={p.busy} onClick={p.onGoogle}>
-            {p.pending === 'google' ? <Spinner size={16} /> : <GoogleG />}
-            Continue with Google
-          </button>
-        )}
-        {(p.available.email || p.nothingAvailable) && (
-          <button
-            type="button"
-            className={`btn btn-block btn-xl ${p.available.google ? 'btn-soft' : 'btn-primary'}`}
-            disabled={p.busy || !p.available.email}
-            onClick={p.onEmail}
-          >
-            <Mail size={17} aria-hidden="true" />
-            Continue with email
-          </button>
-        )}
-        {p.nothingAvailable && <p className="field-note warn">Sign-in isn’t configured for this deployment yet.</p>}
+        {/* Both options are always laid out; each switches on once the deployment confirms it, so nothing jumps. */}
+        <button type="button" className="btn btn-primary btn-block btn-xl" disabled={p.busy || !p.available?.google} aria-busy={!p.available || undefined} onClick={p.onGoogle}>
+          {p.pending === 'google' ? <Spinner size={16} /> : <GoogleG />}
+          Continue with Google
+        </button>
+        <button type="button" className="btn btn-soft btn-block btn-xl" disabled={p.busy || !p.available?.email} aria-busy={!p.available || undefined} onClick={p.onEmail}>
+          <Mail size={17} aria-hidden="true" />
+          Continue with email
+        </button>
         <AnimatePresence>{p.error && <InlineError key={p.error}>{p.error}</InlineError>}</AnimatePresence>
       </motion.div>
     </div>
@@ -294,20 +292,26 @@ function Welcome(p: {
 
 /* ───────── Illustrations ───────── */
 
+const FLOAT = 5;
 const float = (i: number) => ({
-  y: [0, -6 - (i % 3) * 2, 0],
-  transition: { duration: 3.2 + i * 0.45, repeat: Infinity, ease: 'easeInOut' as const, delay: i * 0.2 },
+  y: [0, -FLOAT, 0],
+  transition: { duration: 3.4 + (i % 3) * 0.5, repeat: Infinity, ease: 'easeInOut' as const, delay: i * 0.35 },
 });
+
+// The outer ring's radius in styles.css (.art-ring.r2). The inner ring is 98px, so a face of up to
+// 48px here keeps a clear gap from it even at the bottom of its float.
+const ORBIT_R = 145;
 
 /** Three circles drift together into the Common mark while people and agents gather around it. */
 function OrbitArt() {
-  const spots: { x: number; y: number; s: number; agent?: Agent['id']; who?: number }[] = [
-    { x: -106, y: -50, s: 50, who: 0 },
-    { x: 100, y: -66, s: 46, agent: 'claude' },
-    { x: 120, y: 42, s: 50, who: 1 },
-    { x: -118, y: 60, s: 44, agent: 'chatgpt' },
-    { x: 4, y: 104, s: 40, who: 3 },
-    { x: -14, y: -112, s: 34, who: 4 },
+  // Faces sit on the outer ring at fixed angles (0° is right, clockwise).
+  const spots: { a: number; s: number; agent?: Agent['id']; who?: number }[] = [
+    { a: -90, s: 36, who: 4 },
+    { a: -34, s: 44, agent: 'claude' },
+    { a: 22, s: 48, who: 1 },
+    { a: 92, s: 40, who: 3 },
+    { a: 152, s: 44, agent: 'chatgpt' },
+    { a: 208, s: 48, who: 0 },
   ];
   return (
     <div className="art art-orbit" aria-hidden="true">
@@ -320,7 +324,7 @@ function OrbitArt() {
         <motion.span
           key={i}
           className="art-face"
-          style={{ left: `calc(50% + ${spot.x}px)`, top: `calc(50% + ${spot.y}px)` }}
+          style={{ left: `calc(50% + ${(Math.cos((spot.a * Math.PI) / 180) * ORBIT_R).toFixed(1)}px)`, top: `calc(50% + ${(Math.sin((spot.a * Math.PI) / 180) * ORBIT_R).toFixed(1)}px)` }}
           initial={{ scale: 0, opacity: 0, x: '-50%', y: '-50%' }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 380, damping: 18, delay: 0.45 + i * 0.09 }}
@@ -373,10 +377,10 @@ function UpdatesArt() {
           <Avatar person={CAST[0]} size={26} />
           <span className="art-name">{CAST[0].name}</span>
         </span>
-        <span className="art-bubble art-typing" style={{ background: tone(CAST[0].color).bg }}>
-          {[0, 1, 2].map((d) => (
-            <motion.i key={d} animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.9, repeat: Infinity, delay: d * 0.15 }} />
-          ))}
+        <span className="art-bubble art-typing typing-dots" style={{ background: tone(CAST[0].color).bg, color: tone(CAST[0].color).ink }}>
+          <i />
+          <i />
+          <i />
         </span>
       </motion.div>
     </div>

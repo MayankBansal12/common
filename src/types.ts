@@ -29,7 +29,8 @@ export interface CommonUIProps {
   emailStep: 'email' | 'code';
   emailAddress: string;
   authBusy: boolean;
-  authAvailable: { google: boolean; email: boolean };
+  /** Null until the deployment has reported which sign-in methods it supports. */
+  authAvailable: { google: boolean; email: boolean } | null;
   onGoogleSignIn: () => Promise<void>;
   onEmailSignIn: (email: string) => Promise<void>;
   onVerifyCode: (code: string) => Promise<void>;

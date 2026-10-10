@@ -921,6 +921,18 @@ fieldset {
   width: 100%;
   display: grid;
   place-items: center;
+  container-type: size;
+}
+/* The orbit is drawn at a fixed size; shrink it on short screens rather than letting faces clip. */
+@container (max-height: 350px) {
+  .art-orbit {
+    scale: 0.86;
+  }
+}
+@container (max-height: 300px) {
+  .art-orbit {
+    scale: 0.72;
+  }
 }
 .onb-title {
   font-size: 29px;
@@ -962,28 +974,48 @@ fieldset {
   transition: opacity 0.2s;
 }
 .onb-dot[aria-selected='true'] {
-  width: 34px;
+  width: 36px;
 }
-.onb-dot-fill {
+.onb-dot-track {
   position: absolute;
-  inset: 5.5px 0;
+  inset: 5.5px 2px;
   overflow: hidden;
   border-radius: 4px;
-  background: var(--ink-4);
+  background: var(--line-2);
   opacity: 0;
   transition: opacity 0.25s;
 }
-.onb-dot[aria-selected='true'] .onb-dot-fill {
+.onb-dot[aria-selected='true'] .onb-dot-track {
   opacity: 1;
 }
 .onb-dot[aria-selected='true']::before {
   opacity: 0;
 }
+/* Fills over the slide's lifetime; once autoplay stops (a swipe or tap), it simply rests full. */
 .onb-dot-progress {
   position: absolute;
   inset: 0;
-  background: var(--ink);
-  transform-origin: 0 50%;
+  border-radius: inherit;
+  background: var(--ink-2);
+  animation: onb-progress linear forwards;
+  animation-play-state: paused;
+  animation-delay: -999s;
+}
+.onb-dot-progress[data-playing] {
+  animation-play-state: running;
+  animation-delay: 0s;
+}
+.onb-dots[data-held] .onb-dot-progress {
+  animation-play-state: paused;
+}
+/* Slides in rather than scaling, so its rounded leading edge keeps its shape. */
+@keyframes onb-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
 .onb-cta {
@@ -996,6 +1028,14 @@ fieldset {
 .onb-cta .inline-error,
 .onb-cta .field-note {
   text-align: center;
+}
+/* Sign-in buttons wait, dimmed, for the deployment to confirm them, then ease on. */
+.onb-cta .btn {
+  transition: background-color 0.12s, box-shadow 0.12s, opacity 0.35s ease, transform 0.12s;
+}
+.onb-cta .btn[aria-busy] {
+  opacity: 0.4;
+  cursor: progress;
 }
 
 .btn-xl {
@@ -1229,15 +1269,9 @@ fieldset {
 }
 .art-typing {
   display: inline-flex;
+  align-items: center;
   gap: 4px;
   padding: 14px 16px;
-}
-.art-typing i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  color: var(--ink-3);
 }
 
 .art-badge {
@@ -1795,12 +1829,38 @@ fieldset {
   height: 34px;
   padding: 0 14px;
 }
+/* iMessage-style: the dots breathe in turn, a quiet wave rather than a bounce. */
 .typing-dots i {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: currentColor;
-  opacity: 0.4;
+  opacity: 0.28;
+  animation: typing-wave 1.4s ease-in-out infinite;
+}
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes typing-wave {
+  0%,
+  60%,
+  100% {
+    opacity: 0.28;
+    transform: scale(0.86);
+  }
+  30% {
+    opacity: 0.62;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots i {
+    animation: none;
+    opacity: 0.45;
+  }
 }
 
 .bubble.jumbo {
