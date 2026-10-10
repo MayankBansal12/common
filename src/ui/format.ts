@@ -1,3 +1,6 @@
+// Short by design: long enough for a real message or an agent prompt, short enough to stay conversational.
+export const MESSAGE_LIMIT = 2000;
+
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
 const shortWeekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short' });

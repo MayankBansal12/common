@@ -1,12 +1,15 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowDown, ArrowUp, ChevronLeft, RotateCw } from 'lucide-react';
-import type { Activity, Invitation, Message, Person, Space } from '../types';
+import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus } from 'lucide-react';
+import type { Activity, Invitation, Message, Person, Space, SpaceInput } from '../types';
 import { Avatar, SpaceBadge, Spinner } from './primitives';
 import { MembersDialog } from './MembersDialog';
+import { AgentAvatar } from './agents';
+import { useAmbientTint } from './Device';
+import { SpaceSheet } from './SpaceDialogs';
 import { tone } from './palette';
+import { isJumboEmoji, renderMessage } from './markdown';
 import { dayKey, dayLabel, timeOf } from './format';
-import { readSession, usePrefersFinePointer, writeSession } from './hooks';
 
 type Props = {
   user: Person;
@@ -25,9 +28,41 @@ type Props = {
   onInviteMember: (email: string) => Promise<void>;
   onRemoveMember: (userId: string) => Promise<void>;
   onRevokeInvite: (id: string) => Promise<void>;
+  onUpdateSpace: (input: SpaceInput) => Promise<void>;
 };
 
 const keyOf = (m: Message) => m.clientId || m.id;
+
+// The rich-text editor is the heaviest part of the app; it loads on its own, fetched in the
+// background at startup so it is usually ready before a chat is opened.
+const loadComposer = () => import('./Composer');
+const Composer = lazy(() => loadComposer().then((m) => ({ default: m.Composer })));
+if (typeof window !== 'undefined') {
+  const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 1500));
+  idle(() => void loadComposer().catch(() => {}));
+}
+
+/** Stands in for the composer for the moment it may still be loading. */
+function ComposerFallback({ spaceName }: { spaceName: string }) {
+  return (
+    <div className="composer" aria-hidden="true">
+      <div className="capsule">
+        <div className="composer-field">
+          <div className="composer-input" />
+          <div className="composer-placeholder">Message {spaceName}</div>
+        </div>
+        <span className="send" data-disabled>
+          <ArrowUp size={15} strokeWidth={2.4} />
+        </span>
+      </div>
+    </div>
+  );
+}
+const TIME_REVEAL = 76;
+// Messages from one person within a few minutes stack into a group; longer gaps get a time divider.
+const GROUP_GAP = 5 * 60_000;
+const DIVIDER_GAP = 15 * 60_000;
+const breaksAt = (a: Message, b: Message) => dayKey(a.createdAt) !== dayKey(b.createdAt) || b.createdAt - a.createdAt > DIVIDER_GAP;
 const NEAR_BOTTOM = 48;
 
 export function ChatScreen(p: Props) {
@@ -35,6 +70,8 @@ export function ChatScreen(p: Props) {
   const reduce = useReducedMotion();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  useAmbientTint(space.color);
   const [scrolled, setScrolled] = useState(false);
   const [showJump, setShowJump] = useState(false);
   const [unseen, setUnseen] = useState(0);
@@ -119,7 +156,8 @@ export function ChatScreen(p: Props) {
   const others = p.members.filter((m) => m.id !== user.id);
   const stack = (others.length ? others : p.members).slice(0, 3);
 
-  let prevDay = -1;
+  let lastMineIdx = messages.length - 1;
+  while (lastMineIdx >= 0 && messages[lastMineIdx].sender.id !== user.id) lastMineIdx--;
 
   return (
     <div className="screen chat">
@@ -127,8 +165,8 @@ export function ChatScreen(p: Props) {
         <button type="button" className="icon-btn" aria-label="Back to spaces" title="Back to spaces" onClick={p.onBack}>
           <ChevronLeft size={19} />
         </button>
-        <button type="button" className="chat-title" onClick={() => setMembersOpen(true)} aria-label={`${space.name} details`}>
-          <SpaceBadge symbol={space.symbol} name={space.name} color={space.color} size={34} />
+        <button type="button" className="chat-title" onClick={() => setEditOpen(true)} aria-label={`Edit ${space.name}`} title="Edit space">
+          <SpaceBadge symbol={space.symbol} name={space.name} color={space.color} imageUrl={space.imageUrl} size={34} />
           <span className="chat-name">
             <span className="chat-name-text">{space.name}</span>
           </span>
@@ -168,25 +206,58 @@ export function ChatScreen(p: Props) {
               <Spinner size={16} />
             </div>
           )}
-          <ol className="messages" role="log" aria-label={`Messages in ${space.name}`}>
+          {!p.isLoadingMessages && messages.length === 0 && (
+            <EmptyChat
+              space={space}
+              onSayHi={() => {
+                stickNext.current = true;
+                void p.onSendMessage('Hi everyone 👋').catch(() => {});
+              }}
+              onInvite={() => setMembersOpen(true)}
+            />
+          )}
+          {/* Drag the thread left to reveal each message's time, as in iMessage. */}
+          <motion.ol
+            className="messages"
+            role="log"
+            aria-label={`Messages in ${space.name}`}
+            drag={reduce ? false : 'x'}
+            dragDirectionLock
+            dragConstraints={{ left: -TIME_REVEAL, right: 0 }}
+            dragElastic={{ left: 0.12, right: 0 }}
+            dragMomentum={false}
+            dragSnapToOrigin
+          >
             {messages.map((m, i) => {
-              const day = dayKey(m.createdAt);
-              const divider = day !== prevDay;
-              prevDay = day;
+              const prev = messages[i - 1];
+              const next = messages[i + 1];
+              const divider = !prev || breaksAt(prev, m);
+              const first = divider || prev.sender.id !== m.sender.id || m.createdAt - prev.createdAt > GROUP_GAP;
+              const last = !next || breaksAt(m, next) || next.sender.id !== m.sender.id || next.createdAt - m.createdAt > GROUP_GAP;
               const k = keyOf(m);
               const animate = ready && !known.current.has(k) && i > prevTailIdx;
               return (
                 <Fragment key={k}>
                   {divider && (
                     <li className="day">
-                      <span>{dayLabel(m.createdAt)}</span>
+                      <span>
+                        <b>{dayLabel(m.createdAt)}</b> {timeOf(m.createdAt)}
+                      </span>
                     </li>
                   )}
-                  <MessageRow m={m} mine={m.sender.id === user.id} animate={animate} onRetry={p.onRetryMessage} />
+                  <MessageRow
+                    m={m}
+                    mine={m.sender.id === user.id}
+                    first={first}
+                    last={last}
+                    latestMine={i === lastMineIdx}
+                    animate={animate}
+                    onRetry={p.onRetryMessage}
+                  />
                 </Fragment>
               );
             })}
-          </ol>
+          </motion.ol>
         </div>
       </div>
 
@@ -209,17 +280,20 @@ export function ChatScreen(p: Props) {
         )}
       </AnimatePresence>
 
-      <Composer
-        key={`${user.id}:${space.id}`}
-        draftKey={`common:draft:${user.id}:${space.id}`}
-        spaceName={space.name}
-        onSend={(body) => {
-          stickNext.current = true;
-          return p.onSendMessage(body);
-        }}
-        isQueued={(body) => latest.current.some((m) => m.sender.id === user.id && m.body === body && m.status !== 'sent')}
-      />
+      <Suspense fallback={<ComposerFallback spaceName={space.name} />}>
+        <Composer
+          key={`${user.id}:${space.id}`}
+          draftKey={`common:draft:${user.id}:${space.id}`}
+          spaceName={space.name}
+          onSend={(body) => {
+            stickNext.current = true;
+            return p.onSendMessage(body);
+          }}
+          isQueued={(body) => latest.current.some((m) => m.sender.id === user.id && m.body === body && m.status !== 'sent')}
+        />
+      </Suspense>
 
+      <SpaceSheet open={editOpen} onOpenChange={setEditOpen} space={space} onSubmit={p.onUpdateSpace} />
       <MembersDialog
         open={membersOpen}
         onOpenChange={setMembersOpen}
@@ -236,158 +310,88 @@ export function ChatScreen(p: Props) {
   );
 }
 
-const URL_RE = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g;
-function linkify(text: string): ReactNode[] {
-  return text.split(URL_RE).map((part, i) =>
-    i % 2 === 1 ? (
-      <a key={i} href={part} target="_blank" rel="noopener noreferrer">
-        {part}
-      </a>
-    ) : (
-      part
-    ),
+function EmptyChat({ space, onSayHi, onInvite }: { space: Space; onSayHi: () => void; onInvite: () => void }) {
+  return (
+    <motion.div className="chat-empty" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.2, 0.7, 0.2, 1] }}>
+      <div className="chat-empty-art" aria-hidden="true">
+        <SpaceBadge symbol={space.symbol} name={space.name} color={space.color} imageUrl={space.imageUrl} size={64} />
+        <AgentAvatar agent="claude" size={30} className="chat-empty-agent a1" />
+        <AgentAvatar agent="chatgpt" size={30} className="chat-empty-agent a2" />
+      </div>
+      <h2 className="chat-empty-title">This is the start of {space.name}</h2>
+      <p className="chat-empty-body">Say hello or invite your people. Agents you connect can post here too.</p>
+      <div className="chat-empty-actions">
+        <button type="button" className="chip" onClick={onSayHi}>
+          👋 Say hi
+        </button>
+        <button type="button" className="chip" onClick={onInvite}>
+          <UserPlus size={13} aria-hidden="true" />
+          Invite people
+        </button>
+      </div>
+    </motion.div>
   );
 }
 
-const MessageRow = memo(function MessageRow({ m, mine, animate, onRetry }: { m: Message; mine: boolean; animate: boolean; onRetry: (clientId: string) => void }) {
+const MessageRow = memo(function MessageRow({
+  m,
+  mine,
+  first,
+  last,
+  latestMine,
+  animate,
+  onRetry,
+}: {
+  m: Message;
+  mine: boolean;
+  first: boolean;
+  last: boolean;
+  latestMine: boolean;
+  animate: boolean;
+  onRetry: (clientId: string) => void;
+}) {
   const t = tone(m.sender.color);
   const status = m.status ?? 'sent';
-  const stamp =
-    status === 'sending' ? (
-      <span className="meta-time">Sending…</span>
-    ) : status === 'failed' ? (
-      <span className="meta-failed">
-        Not sent
-        <button type="button" className="retry" onClick={() => onRetry(m.clientId)} aria-label="Retry sending message" title="Retry">
-          <RotateCw size={11} aria-hidden="true" />
-          Retry
-        </button>
-      </span>
-    ) : (
-      <time className="meta-time" dateTime={new Date(m.createdAt).toISOString()}>
-        {timeOf(m.createdAt)}
-      </time>
-    );
-  const who = (
-    <span className="meta-who">
-      <Avatar person={m.sender} size={16} />
-      <span className="meta-name">{mine ? 'You' : m.sender.name}</span>
-    </span>
-  );
+  const jumbo = isJumboEmoji(m.body);
+  const time = timeOf(m.createdAt);
   return (
     <motion.li
       className={`msg ${mine ? 'mine' : 'theirs'}`}
       data-status={status}
+      data-first={first || undefined}
+      data-last={last || undefined}
       initial={animate ? { opacity: 0, y: 12, scale: 0.94 } : false}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 560, damping: 34, mass: 0.7 }}
       style={{ transformOrigin: mine ? '100% 100%' : '0% 100%' } as CSSProperties}
     >
+      {!mine && <span className="msg-avatar">{last && <Avatar person={m.sender} size={28} />}</span>}
       <div className="msg-stack">
-        <div className="bubble" style={{ '--b-bg': t.bg, '--b-ink': t.ink } as CSSProperties}>
-          {linkify(m.body)}
+        <div
+          className={jumbo ? 'bubble jumbo' : `bubble${last ? ' tail' : ''}`}
+          style={{ '--b-bg': t.bg, '--b-ink': t.ink } as CSSProperties}
+          title={time}
+        >
+          <span className="sr-only">{mine ? 'You' : m.sender.name}: </span>
+          {jumbo ? m.body.trim() : renderMessage(m.body)}
         </div>
-        <div className="meta">
-          {mine ? (
-            <>
-              {stamp}
-              {who}
-            </>
-          ) : (
-            <>
-              {who}
-              {stamp}
-            </>
-          )}
-        </div>
+        {/* The name closes a group, next to the avatar, so who said it reads as one unit. */}
+        {!mine && last && <span className="msg-name">{m.sender.name}</span>}
+        {status === 'sending' && <span className="msg-status">Sending…</span>}
+        {status === 'failed' && (
+          <span className="msg-status failed">
+            Not delivered
+            <button type="button" className="retry" onClick={() => onRetry(m.clientId)} aria-label="Retry sending message" title="Retry">
+              <RotateCw size={11} aria-hidden="true" />
+              Retry
+            </button>
+          </span>
+        )}
+        {status === 'sent' && mine && latestMine && <span className="msg-status">Delivered</span>}
       </div>
+      <time className="msg-time" dateTime={new Date(m.createdAt).toISOString()}>
+        {time}
+      </time>
     </motion.li>
   );
 });
-
-function Composer({
-  draftKey: storageKey,
-  spaceName,
-  onSend,
-  isQueued,
-}: {
-  draftKey: string;
-  spaceName: string;
-  onSend: (body: string) => Promise<void>;
-  isQueued: (body: string) => boolean;
-}) {
-  const [value, setValue] = useState(() => readSession(storageKey));
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const fine = usePrefersFinePointer();
-
-  useEffect(() => {
-    writeSession(storageKey, value);
-  }, [storageKey, value]);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
-  }, [value]);
-
-  useEffect(() => {
-    if (fine) ref.current?.focus({ preventScroll: true });
-  }, [fine]);
-
-  const canSend = value.trim().length > 0;
-
-  function send() {
-    const body = value.trim();
-    if (!body) return;
-    setValue('');
-    writeSession(storageKey, '');
-    // The parent owns the durable queue; queued failures surface as a retryable bubble.
-    // If the send never made it into the queue, hand the text back instead of losing it.
-    const restore = () => {
-      if (isQueued(body)) return;
-      setValue((v) => (v ? v : body));
-      writeSession(storageKey, readSession(storageKey) || body);
-    };
-    try {
-      onSend(body).catch(restore);
-    } catch {
-      restore();
-    }
-    ref.current?.focus({ preventScroll: true });
-  }
-
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && fine) {
-      e.preventDefault();
-      send();
-    }
-  }
-
-  return (
-    <form
-      className="composer"
-      onSubmit={(e) => {
-        e.preventDefault();
-        send();
-      }}
-    >
-      <div className="capsule">
-        <textarea
-          ref={ref}
-          className="composer-input"
-          aria-label={`Message ${spaceName}`}
-          rows={1}
-          maxLength={8000}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={onKeyDown}
-          enterKeyHint="send"
-        />
-        <button type="submit" className="send" disabled={!canSend} aria-label="Send" title="Send">
-          <ArrowUp size={15} strokeWidth={2.4} />
-        </button>
-      </div>
-    </form>
-  );
-}

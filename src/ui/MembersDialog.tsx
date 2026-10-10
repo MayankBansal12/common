@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, Mail, Sparkles, UserMinus, UserPlus, UserRoundCheck, UserRoundX, X } from 'lucide-react';
+import { Check, Mail, PenLine, Sparkles, UserMinus, UserPlus, UserRoundCheck, UserRoundX, X } from 'lucide-react';
 import type { Activity, Invitation, Person, Space } from '../types';
 import { Avatar, InlineError, Sheet, SpaceBadge, Spinner } from './primitives';
 import { ago, errorText, isEmail } from './format';
@@ -42,7 +42,7 @@ export function MembersDialog(p: Props) {
       open={p.open}
       onOpenChange={p.onOpenChange}
       className="members-sheet"
-      titleAddon={<SpaceBadge symbol={p.space.symbol} name={p.space.name} color={p.space.color} size={26} />}
+      titleAddon={<SpaceBadge symbol={p.space.symbol} name={p.space.name} color={p.space.color} imageUrl={p.space.imageUrl} size={26} />}
       title={p.space.name}
     >
       <div className="tabs" role="tablist" aria-label="Space details" ref={tabsRef} onKeyDown={onTabKey}>
@@ -273,6 +273,7 @@ const ACTIVITY_ICON = {
   member_joined: UserRoundCheck,
   member_removed: UserRoundX,
   invite_revoked: X,
+  space_updated: PenLine,
 } as const;
 
 function activityText(a: Activity) {
@@ -288,6 +289,8 @@ function activityText(a: Activity) {
       return <><strong>{a.actorName}</strong> removed{s}</>;
     case 'invite_revoked':
       return <><strong>{a.actorName}</strong> revoked the invite for{s || ' someone'}</>;
+    case 'space_updated':
+      return a.subject ? <><strong>{a.actorName}</strong> renamed the space to{s}</> : <><strong>{a.actorName}</strong> updated the space</>;
   }
 }
 

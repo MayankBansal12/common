@@ -6,6 +6,7 @@ import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import type { CommonUIProps, Message, Person } from './types';
 import CommonUI from './ui/CommonUI';
+import { MESSAGE_LIMIT } from './ui/format';
 
 function errorMessage(error: unknown) {
   if (error instanceof ConvexError && typeof error.data === 'string') return error.data;
@@ -62,7 +63,7 @@ export default function App() {
 const noop = async () => {};
 export const emptyProps: CommonUIProps = {
   screen: 'loading', user: null, spaces: [], activeSpace: null, messages: [], members: [], invitations: [], pendingInvitations: [], activities: [], isOnline: true, isLoadingMessages: false, hasMoreMessages: false, error: null,
-  emailStep: 'email', emailAddress: '', authBusy: false, authAvailable: { google: false, email: false }, onGoogleSignIn: noop, onEmailSignIn: noop, onVerifyCode: noop, onBackToEmail() {}, onSignOut: noop, onCreateSpace: noop, onSelectSpace() {}, onSendMessage: noop, onRetryMessage() {}, onLoadMoreMessages() {}, onInviteMember: noop, onRemoveMember: noop, onRevokeInvite: noop, onAcceptInvitation: noop, onUpdateProfile: noop, onDismissError() {},
+  emailStep: 'email', emailAddress: '', authBusy: false, authAvailable: { google: false, email: false }, onGoogleSignIn: noop, onEmailSignIn: noop, onVerifyCode: noop, onBackToEmail() {}, onSignOut: noop, onCreateSpace: async () => '', onUpdateSpace: noop, onSelectSpace() {}, onSendMessage: noop, onRetryMessage() {}, onLoadMoreMessages() {}, onInviteMember: noop, onRemoveMember: noop, onRevokeInvite: noop, onAcceptInvitation: noop, onUpdateProfile: noop, onDismissError() {},
 };
 type AuthProps = Pick<CommonUIProps, 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onSignOut'>;
 
@@ -82,6 +83,8 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
   const isOnline = connection.isWebSocketConnected;
   const send = useMutation(api.messages.send);
   const create = useMutation(api.spaces.create);
+  const updateSpace = useMutation(api.spaces.update);
+  const generateUploadUrl = useMutation(api.users.generateUploadUrl);
   const markRead = useMutation(api.spaces.markRead);
   const invite = useMutation(api.members.invite);
   const remove = useMutation(api.members.remove);
@@ -121,6 +124,13 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
     return () => window.removeEventListener('hashchange', update);
   }, []);
   const select = useCallback((id: string | null) => { setSelected(id); window.location.hash = id ? `space=${id}` : ''; setError(null); }, []);
+  // A Blob is uploaded to storage first; null (remove) and undefined (keep) pass straight through.
+  const upload = async (image: Blob | null | undefined) => {
+    if (!image) return image;
+    const res = await fetch(await generateUploadUrl(), { method: 'POST', headers: { 'Content-Type': image.type }, body: image });
+    if (!res.ok) throw new ConvexError('Couldn’t upload that photo. Please try again.');
+    return ((await res.json()) as { storageId: Id<'_storage'> }).storageId;
+  };
   const perform = async <T,>(fn: () => Promise<T>): Promise<T> => { setError(null); try { return await fn(); } catch (e) { const message = errorMessage(e); setError(message); throw new Error(message); } };
   const confirmedIds = new Set(paginated.results.map(m => m.clientId));
   const messages: Message[] = [...[...paginated.results].reverse(), ...outbox.filter(m => m.spaceId === spaceId && !confirmedIds.has(m.clientId))].sort((a, b) => a.createdAt - b.createdAt);
@@ -128,11 +138,12 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
     screen={activeSpace ? 'chat' : 'spaces'} user={user} spaces={spaces} activeSpace={activeSpace} messages={messages} members={members} invitations={invitations} pendingInvitations={pendingInvitations} activities={activities}
     isOnline={isOnline} isLoadingMessages={paginated.status === 'LoadingFirstPage'} hasMoreMessages={paginated.status === 'CanLoadMore'} error={error} onDismissError={() => setError(null)}
     onSelectSpace={select}
-    onCreateSpace={async (name, symbol, color) => { const id = await perform(() => create({ name, symbol, color })); select(id); }}
+    onCreateSpace={({ image, ...input }) => perform(async () => create({ ...input, imageId: await upload(image) }))}
+    onUpdateSpace={async ({ image, ...input }) => { if (spaceId) await perform(async () => updateSpace({ ...input, spaceId, imageId: await upload(image) })); }}
     onSendMessage={async body => {
       const trimmed = body.trim();
       if (!spaceId || !trimmed) return;
-      if (trimmed.length > 8000) throw new Error('Messages must be under 8,000 characters.');
+      if (trimmed.length > MESSAGE_LIMIT) throw new Error('Messages must be under 2,000 characters.');
       const clientId = crypto.randomUUID();
       const sender = { ...user, color: members.find(m => m.id === user.id)?.color ?? user.color };
       setOutbox(current => [...current, { id: clientId, clientId, spaceId, body: trimmed, sender, createdAt: Date.now(), status: 'sending' }]);
@@ -143,6 +154,6 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
     onRemoveMember={async userId => { if (spaceId) await perform(() => remove({ spaceId, userId: userId as Id<'users'> })); }}
     onRevokeInvite={async id => { await perform(() => revoke({ invitationId: id as Id<'invitations'> })); }}
     onAcceptInvitation={async id => { const joined = await perform(() => accept({ invitationId: id as Id<'invitations'> })); select(joined); }}
-    onUpdateProfile={async name => { await perform(() => updateProfile({ name })); }}
+    onUpdateProfile={async ({ image, ...input }) => { await perform(async () => updateProfile({ ...input, imageId: await upload(image) })); }}
   />;
 }

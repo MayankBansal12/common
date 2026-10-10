@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { motion } from 'motion/react';
 import { Check, LogOut, PenLine, Plus, Users } from 'lucide-react';
-import type { PendingInvitation, Person, Space } from '../types';
+import type { PendingInvitation, Person, ProfileInput, Space, SpaceInput } from '../types';
 import { Avatar, BrandMark, SpaceBadge, Spinner } from './primitives';
-import { CreateSpaceDialog, ProfileDialog } from './SpaceDialogs';
+import { ProfileSheet, SpaceSheet } from './SpaceDialogs';
+import { useScreenContainer } from './Device';
+import { plainText } from './markdown';
 import { errorText, shortStamp } from './format';
 
 type Props = {
@@ -13,14 +15,17 @@ type Props = {
   pendingInvitations: PendingInvitation[];
   isOnline: boolean;
   onSelectSpace: (id: string) => void;
-  onCreateSpace: (name: string, symbol: string, color: number) => Promise<void>;
+  onCreateSpace: (input: SpaceInput) => Promise<string>;
   onAcceptInvitation: (id: string) => Promise<void>;
-  onUpdateProfile: (name: string) => Promise<void>;
+  onUpdateProfile: (input: ProfileInput) => Promise<void>;
   onSignOut: () => Promise<void>;
 };
 
 export function SpacesScreen(p: Props) {
+  const screenContainer = useScreenContainer();
   const [createOpen, setCreateOpen] = useState(false);
+  // A newly created space opens only after its sheet has finished sliding away.
+  const created = useRef<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [accepting, setAccepting] = useState<string | null>(null);
@@ -73,7 +78,7 @@ export function SpacesScreen(p: Props) {
                 {signingOut ? <Spinner size={16} /> : <Avatar person={p.user} size={26} />}
               </button>
             </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
+            <DropdownMenu.Portal container={screenContainer}>
               <DropdownMenu.Content className="menu" align="end" sideOffset={6}>
                 <DropdownMenu.Label className="menu-label">
                   <span className="menu-name">{p.user.name}</span>
@@ -82,7 +87,7 @@ export function SpacesScreen(p: Props) {
                 <DropdownMenu.Separator className="menu-sep" />
                 <DropdownMenu.Item className="menu-item" onSelect={() => setProfileOpen(true)}>
                   <PenLine size={14} aria-hidden="true" />
-                  Edit name
+                  Edit profile
                 </DropdownMenu.Item>
                 <DropdownMenu.Item className="menu-item" disabled={signingOut} onSelect={() => void signOut()}>
                   <LogOut size={14} aria-hidden="true" />
@@ -142,10 +147,10 @@ export function SpacesScreen(p: Props) {
                   transition={{ duration: 0.22, delay: Math.min(i, 8) * 0.025, ease: [0.2, 0.7, 0.2, 1] }}
                 >
                   <button type="button" className="space-row" onClick={() => p.onSelectSpace(s.id)}>
-                    <SpaceBadge symbol={s.symbol} name={s.name} color={s.color} size={36} />
+                    <SpaceBadge symbol={s.symbol} name={s.name} color={s.color} imageUrl={s.imageUrl} size={36} />
                     <span className="row-main">
                       <span className="row-title">{s.name}</span>
-                      <span className="row-sub">{s.lastMessage || ' '}</span>
+                      <span className="row-sub">{s.lastMessage ? plainText(s.lastMessage) : ' '}</span>
                     </span>
                     <span className="row-side">
                       <span className="row-time">{shortStamp(s.updatedAt)}</span>
@@ -176,8 +181,19 @@ export function SpacesScreen(p: Props) {
         </div>
       </div>
 
-      <CreateSpaceDialog open={createOpen} onOpenChange={setCreateOpen} onCreate={p.onCreateSpace} />
-      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} user={p.user} onSave={p.onUpdateProfile} />
+      <SpaceSheet
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSubmit={async (input) => {
+          created.current = await p.onCreateSpace(input);
+        }}
+        onExitComplete={() => {
+          const id = created.current;
+          created.current = null;
+          if (id) p.onSelectSpace(id);
+        }}
+      />
+      <ProfileSheet open={profileOpen} onOpenChange={setProfileOpen} user={p.user} onSave={p.onUpdateProfile} />
     </div>
   );
 }
