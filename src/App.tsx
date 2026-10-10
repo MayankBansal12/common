@@ -6,6 +6,7 @@ import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import type { CommonUIProps, Message, Person } from './types';
 import CommonUI from './ui/CommonUI';
+import { clearCache, readCachedSpaces, readCachedUser, writeCachedSpaces, writeCachedUser } from './cache';
 import { MESSAGE_LIMIT } from './ui/format';
 
 function errorMessage(error: unknown) {
@@ -34,6 +35,12 @@ function readOutbox(userId: string): OutboxEntry[] {
 export default function App() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const user = useQuery(api.users.me, isAuthenticated ? {} : 'skip');
+  // Once sign-in is confirmed, open with the profile remembered on this device instead of waiting for it.
+  const [cachedUser] = useState(readCachedUser);
+  useEffect(() => {
+    if (user) writeCachedUser(user);
+  }, [user]);
+  const me = user ?? (isAuthenticated && user === undefined ? cachedUser : null);
   const authOptions = useQuery(api.users.authOptions);
   const authActions = useAuthActions();
   const [emailAddress, setEmailAddress] = useState('');
@@ -54,9 +61,9 @@ export default function App() {
     }),
     onVerifyCode: (code: string) => performAuth(() => authActions.signIn('resend-otp', { email: emailAddress, code: code.trim() })),
     onBackToEmail: () => { setEmailStep('email'); setError(null); },
-    onSignOut: async () => { await authActions.signOut(); window.location.hash = ''; setEmailStep('email'); setEmailAddress(''); },
+    onSignOut: async () => { await authActions.signOut(); clearCache(); window.location.hash = ''; setEmailStep('email'); setEmailAddress(''); },
   };
-  if (isAuthenticated && user) return <ConnectedApp key={user.id} user={user} authProps={authProps} />;
+  if (isAuthenticated && me) return <ConnectedApp key={me.id} user={me} authProps={authProps} />;
   return <CommonUI {...emptyProps} {...authProps} screen={isLoading || (isAuthenticated && user === undefined) ? 'loading' : 'login'} error={error} onDismissError={() => setError(null)} />;
 }
 
@@ -69,12 +76,20 @@ type AuthProps = Pick<CommonUIProps, 'emailStep' | 'emailAddress' | 'authBusy' |
 
 function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps }) {
   const spaceList = useQuery(api.spaces.list);
-  const spaces = spaceList ?? [];
+  // Show the last-known list right away; the live one replaces it as soon as it arrives.
+  const [cachedSpaces] = useState(() => readCachedSpaces(user.id));
+  useEffect(() => {
+    if (spaceList) writeCachedSpaces(user.id, spaceList);
+  }, [spaceList, user.id]);
+  const spaces = spaceList ?? cachedSpaces ?? [];
   const pendingInvitations = useQuery(api.members.pending) ?? [];
   const [selected, setSelected] = useState<string | null>(() => window.location.hash.startsWith('#space=') ? window.location.hash.slice(7) : null);
   const [error, setError] = useState<string | null>(null);
   const activeSpace = spaces.find(s => s.id === selected) ?? null;
-  const spaceId = activeSpace?.id as Id<'spaces'> | undefined;
+  // Queries and mutations only target a space confirmed by the live list, never a remembered one.
+  const spaceId = spaceList?.find(s => s.id === selected)?.id as Id<'spaces'> | undefined;
+  // The open chat, for showing and queueing messages (sends are checked server-side regardless).
+  const shownSpaceId = activeSpace?.id;
   const args = spaceId ? { spaceId } : 'skip';
   const members = useQuery(api.members.list, args) ?? [];
   const invitations = useQuery(api.members.invitations, args) ?? [];
@@ -136,22 +151,22 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
   };
   const perform = async <T,>(fn: () => Promise<T>): Promise<T> => { setError(null); try { return await fn(); } catch (e) { const message = errorMessage(e); setError(message); throw new Error(message); } };
   const confirmedIds = new Set(paginated.results.map(m => m.clientId));
-  const messages: Message[] = [...[...paginated.results].reverse(), ...outbox.filter(m => m.spaceId === spaceId && !confirmedIds.has(m.clientId))].sort((a, b) => a.createdAt - b.createdAt);
+  const messages: Message[] = [...[...paginated.results].reverse(), ...outbox.filter(m => m.spaceId === shownSpaceId && !confirmedIds.has(m.clientId))].sort((a, b) => a.createdAt - b.createdAt);
   return <CommonUI {...emptyProps} {...authProps}
     // Reopening a chat (#space=…) keeps the splash until that space has loaded, rather than flashing the list.
-    screen={selected && spaceList === undefined ? 'loading' : activeSpace ? 'chat' : 'spaces'} isLoadingSpaces={spaceList === undefined} user={user} spaces={spaces} activeSpace={activeSpace} messages={messages} members={members} invitations={invitations} pendingInvitations={pendingInvitations} activities={activities} typing={typing}
-    isOnline={isOnline} isLoadingMessages={paginated.status === 'LoadingFirstPage'} hasMoreMessages={paginated.status === 'CanLoadMore'} error={error} onDismissError={() => setError(null)}
+    screen={selected && spaceList === undefined && !activeSpace ? 'loading' : activeSpace ? 'chat' : 'spaces'} isLoadingSpaces={spaceList === undefined && !cachedSpaces} user={user} spaces={spaces} activeSpace={activeSpace} messages={messages} members={members} invitations={invitations} pendingInvitations={pendingInvitations} activities={activities} typing={typing}
+    isOnline={isOnline} isLoadingMessages={paginated.status === 'LoadingFirstPage' || (!!activeSpace && !spaceId)} hasMoreMessages={paginated.status === 'CanLoadMore'} error={error} onDismissError={() => setError(null)}
     onSelectSpace={select}
     onCreateSpace={({ image, ...input }) => perform(async () => create({ ...input, imageId: await upload(image) }))}
     onUpdateSpace={async ({ image, ...input }) => { if (spaceId) await perform(async () => updateSpace({ ...input, spaceId, imageId: await upload(image) })); }}
     onTyping={(id, isTyping) => { void setTyping({ spaceId: id as Id<'spaces'>, typing: isTyping }).catch(() => {}); }}
     onSendMessage={async body => {
       const trimmed = body.trim();
-      if (!spaceId || !trimmed) return;
+      if (!shownSpaceId || !trimmed) return;
       if (trimmed.length > MESSAGE_LIMIT) throw new Error('Messages must be under 2,000 characters.');
       const clientId = crypto.randomUUID();
       const sender = { ...user, color: members.find(m => m.id === user.id)?.color ?? user.color };
-      setOutbox(current => [...current, { id: clientId, clientId, spaceId, body: trimmed, sender, createdAt: Date.now(), status: 'sending' }]);
+      setOutbox(current => [...current, { id: clientId, clientId, spaceId: shownSpaceId, body: trimmed, sender, createdAt: Date.now(), status: 'sending' }]);
     }}
     onRetryMessage={clientId => setOutbox(current => current.map(m => m.clientId === clientId ? { ...m, status: 'sending' } : m))}
     onLoadMoreMessages={() => { if (paginated.status === 'CanLoadMore') paginated.loadMore(50); }}
