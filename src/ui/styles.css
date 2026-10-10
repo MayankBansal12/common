@@ -1188,7 +1188,8 @@ fieldset {
 .art-name {
   position: absolute;
   top: 100%;
-  left: 0;
+  left: 50%;
+  translate: -50% 0;
   margin-top: 3px;
   font-size: 11px;
   font-weight: 550;
@@ -1630,7 +1631,7 @@ fieldset {
   position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: 10px; /* clears the bubble tail, which reaches 10px past the bubble */
   max-width: 100%;
   margin-top: 2px;
 }
@@ -1666,8 +1667,13 @@ fieldset {
 .msg-name {
   position: absolute;
   top: 100%;
-  left: 0;
+  left: 50%;
+  translate: -50% 0;
+  max-width: 52px; /* centred under the avatar without running past the edge */
   margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
   font-size: 11px;
   line-height: 15px;
   font-weight: 550;

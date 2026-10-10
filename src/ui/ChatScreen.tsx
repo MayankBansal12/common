@@ -406,7 +406,9 @@ const MessageRow = memo(function MessageRow({
           {last && (
             <>
               <Avatar person={m.sender} size={28} />
-              <span className="msg-name">{m.sender.name}</span>
+              <span className="msg-name" title={m.sender.name}>
+                {m.sender.name}
+              </span>
             </>
           )}
         </span>
