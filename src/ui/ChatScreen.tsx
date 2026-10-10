@@ -1,6 +1,6 @@
 import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus, UserRound } from 'lucide-react';
 import type { Activity, Invitation, Message, Person, Space, SpaceInput } from '../types';
 import { Avatar, SpaceBadge, Spinner } from './primitives';
 import { MembersDialog } from './MembersDialog';
@@ -209,6 +209,8 @@ export function ChatScreen(p: Props) {
           {!p.isLoadingMessages && messages.length === 0 && (
             <EmptyChat
               space={space}
+              user={user}
+              members={p.members}
               onSayHi={() => {
                 stickNext.current = true;
                 void p.onSendMessage('Hi everyone 👋').catch(() => {});
@@ -310,21 +312,54 @@ export function ChatScreen(p: Props) {
   );
 }
 
-function EmptyChat({ space, onSayHi, onInvite }: { space: Space; onSayHi: () => void; onInvite: () => void }) {
+/** A new space: its badge, who it's for (you, your people, your agents) and a first step. */
+function EmptyChat({ space, user, members, onSayHi, onInvite }: { space: Space; user: Person; members: Person[]; onSayHi: () => void; onInvite: () => void }) {
+  const others = members.filter((m) => m.id !== user.id);
+  const enter = (i: number) => ({
+    initial: { opacity: 0, scale: 0.6, y: 6 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    transition: { type: 'spring' as const, stiffness: 420, damping: 24, delay: 0.15 + i * 0.09 },
+  });
   return (
     <motion.div className="chat-empty" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.2, 0.7, 0.2, 1] }}>
-      <div className="chat-empty-art" aria-hidden="true">
-        <SpaceBadge symbol={space.symbol} name={space.name} color={space.color} imageUrl={space.imageUrl} size={64} />
-        <AgentAvatar agent="claude" size={30} className="chat-empty-agent a1" />
-        <AgentAvatar agent="chatgpt" size={30} className="chat-empty-agent a2" />
+      <SpaceBadge symbol={space.symbol} name={space.name} color={space.color} imageUrl={space.imageUrl} size={68} />
+      <h2 className="chat-empty-title">{space.name}</h2>
+      <p className="chat-empty-body">A common space for you, your people and your agents.</p>
+
+      <div className="circle-row" aria-label="Who this space is for">
+        <motion.div className="seat" {...enter(0)}>
+          <span className="seat-ring">
+            <Avatar person={user} size={50} />
+          </span>
+          <span className="seat-label">You</span>
+        </motion.div>
+        <motion.div className="seat" {...enter(1)}>
+          {others.length ? (
+            <span className="seat-ring">
+              <Avatar person={others[0]} size={50} />
+              {others.length > 1 && <span className="seat-count">+{others.length - 1}</span>}
+            </span>
+          ) : (
+            <button type="button" className="seat-ring seat-open" onClick={onInvite} aria-label="Invite people">
+              <UserRound size={20} aria-hidden="true" />
+            </button>
+          )}
+          <span className="seat-label">{others.length ? `${others.length} ${others.length === 1 ? 'person' : 'people'}` : 'Your people'}</span>
+        </motion.div>
+        <motion.div className="seat" {...enter(2)}>
+          <span className="seat-ring seat-open seat-agents" aria-hidden="true">
+            <AgentAvatar agent="chatgpt" size={22} />
+            <AgentAvatar agent="claude" size={22} />
+          </span>
+          <span className="seat-label">Agents</span>
+        </motion.div>
       </div>
-      <h2 className="chat-empty-title">This is the start of {space.name}</h2>
-      <p className="chat-empty-body">Say hello or invite your people. Agents you connect can post here too.</p>
+
       <div className="chat-empty-actions">
         <button type="button" className="chip" onClick={onSayHi}>
           👋 Say hi
         </button>
-        <button type="button" className="chip" onClick={onInvite}>
+        <button type="button" className="chip chip-primary" onClick={onInvite}>
           <UserPlus size={13} aria-hidden="true" />
           Invite people
         </button>
@@ -365,7 +400,17 @@ const MessageRow = memo(function MessageRow({
       transition={{ type: 'spring', stiffness: 560, damping: 34, mass: 0.7 }}
       style={{ transformOrigin: mine ? '100% 100%' : '0% 100%' } as CSSProperties}
     >
-      {!mine && <span className="msg-avatar">{last && <Avatar person={m.sender} size={28} />}</span>}
+      {/* The avatar and name close a group together, on the left. */}
+      {!mine && (
+        <span className="msg-avatar">
+          {last && (
+            <>
+              <Avatar person={m.sender} size={28} />
+              <span className="msg-name">{m.sender.name}</span>
+            </>
+          )}
+        </span>
+      )}
       <div className="msg-stack">
         <div
           className={jumbo ? 'bubble jumbo' : `bubble${last ? ' tail' : ''}`}
@@ -375,8 +420,6 @@ const MessageRow = memo(function MessageRow({
           <span className="sr-only">{mine ? 'You' : m.sender.name}: </span>
           {jumbo ? m.body.trim() : renderMessage(m.body)}
         </div>
-        {/* The name closes a group, next to the avatar, so who said it reads as one unit. */}
-        {!mine && last && <span className="msg-name">{m.sender.name}</span>}
         {status === 'sending' && <span className="msg-status">Sending…</span>}
         {status === 'failed' && (
           <span className="msg-status failed">

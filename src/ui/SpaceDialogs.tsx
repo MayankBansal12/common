@@ -288,7 +288,6 @@ export function ProfileSheet({
             disabled={busy}
             onChange={(e) => setName(e.target.value)}
           />
-          <p className="field-note">This is how you appear to people in your spaces.</p>
         </div>
         <div>
           <span className="field-label">Email</span>

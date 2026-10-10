@@ -251,19 +251,17 @@ function Welcome(p: {
             className="onb-dot"
             onClick={() => i !== index && paginate(i - index)}
           >
-            {i === index && (
-              <motion.span layoutId="onb-dot" className="onb-dot-fill" transition={{ type: 'spring', stiffness: 500, damping: 40 }}>
-                {autoplay && !reduce && (
-                  <motion.span
-                    key={index}
-                    className="onb-dot-progress"
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ duration: AUTOPLAY_MS / 1000, ease: 'linear' }}
-                  />
-                )}
-              </motion.span>
-            )}
+            <span className="onb-dot-fill">
+              {i === index && autoplay && !reduce && (
+                <motion.span
+                  key={index}
+                  className="onb-dot-progress"
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: 1 }}
+                  transition={{ duration: AUTOPLAY_MS / 1000, ease: 'linear' }}
+                />
+              )}
+            </span>
           </button>
         ))}
       </div>
@@ -382,25 +380,27 @@ function UpdatesArt() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ type: 'spring', stiffness: 420, damping: 26, delay: 0.25 + i * 0.6 }}
           >
-            {l.agent && <AgentAvatar agent={l.agent} size={26} />}
-            <span className="art-stack">
-              <span className="art-bubble" style={{ background: t.bg, color: t.ink }}>
-                {l.text}
+            {l.agent && (
+              <span className="art-who">
+                <AgentAvatar agent={l.agent} size={26} />
+                <span className="art-name">{name}</span>
               </span>
-              {!l.mine && <span className="art-name">{name}</span>}
+            )}
+            <span className="art-bubble" style={{ background: t.bg, color: t.ink }}>
+              {l.text}
             </span>
           </motion.div>
         );
       })}
       <motion.div className="art-msg" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 2.1, duration: 0.3 }}>
-        <Avatar person={CAST[0]} size={26} />
-        <span className="art-stack">
-          <span className="art-bubble art-typing" style={{ background: tone(CAST[0].color).bg }}>
-            {[0, 1, 2].map((d) => (
-              <motion.i key={d} animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.9, repeat: Infinity, delay: d * 0.15 }} />
-            ))}
-          </span>
+        <span className="art-who">
+          <Avatar person={CAST[0]} size={26} />
           <span className="art-name">{CAST[0].name}</span>
+        </span>
+        <span className="art-bubble art-typing" style={{ background: tone(CAST[0].color).bg }}>
+          {[0, 1, 2].map((d) => (
+            <motion.i key={d} animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.9, repeat: Infinity, delay: d * 0.15 }} />
+          ))}
         </span>
       </motion.div>
     </div>

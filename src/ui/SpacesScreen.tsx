@@ -114,7 +114,7 @@ export function SpacesScreen(p: Props) {
               </h2>
               <ul className="list">
                 {p.pendingInvitations.map((inv) => (
-                  <motion.li key={inv.id} className="invite-row" layout="position" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
+                  <motion.li key={inv.id} className="invite-row" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
                     <div className="row-main">
                       <span className="row-title">{inv.spaceName}</span>
                       <span className="row-sub">from {inv.inviterName}</span>
