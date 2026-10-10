@@ -25,7 +25,6 @@ export interface CommonUIProps {
   emailAddress: string;
   authBusy: boolean;
   authAvailable: { google: boolean; email: boolean };
-  preview?: boolean;
   onGoogleSignIn: () => Promise<void>;
   onEmailSignIn: (email: string) => Promise<void>;
   onVerifyCode: (code: string) => Promise<void>;

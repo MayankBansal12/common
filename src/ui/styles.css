@@ -203,20 +203,6 @@ fieldset {
   }
 }
 
-.preview-badge {
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  z-index: 5;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--ink-2);
-  background: var(--surface);
-  border-radius: 999px;
-  padding: 3px 9px;
-  box-shadow: 0 0 0 1px var(--line-2);
-}
 
 .shell {
   position: relative;
@@ -2482,16 +2468,6 @@ ol.md-list {
     padding: 0;
     place-items: stretch;
     background: var(--panel);
-  }
-  .preview-badge {
-    top: calc(4px + env(safe-area-inset-top));
-    left: 50%;
-    translate: -50% 0;
-    font-size: 10px;
-    padding: 1px 8px;
-  }
-  .has-preview .device-stage.bare {
-    padding-top: 24px;
   }
 }
 

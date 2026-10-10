@@ -38,7 +38,7 @@ export default function Preview() {
   const signIn = async () => { await wait(700); setSignedOut(false); setEmailStep('email'); };
   // Messages carry a snapshot of their sender; show the latest profile like the live app does.
   const messages = (selected ? messageMap[selected] ?? [] : []).map(m => ({ ...m, sender: members.find(p => p.id === m.sender.id) ?? m.sender }));
-  return <CommonUI {...emptyProps} preview screen={signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={spaces} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities}
+  return <CommonUI {...emptyProps} screen={signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={spaces} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities}
     authAvailable={{ google: true, email: true }} emailStep={emailStep} emailAddress={emailAddress}
     onGoogleSignIn={signIn}
     onEmailSignIn={async email => { await wait(600); setEmailAddress(email); setEmailStep('code'); }}

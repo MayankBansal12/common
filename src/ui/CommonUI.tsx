@@ -18,8 +18,7 @@ export default function CommonUI(props: CommonUIProps) {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className={`common-root${props.preview ? ' has-preview' : ''}`}>
-        {props.preview && <span className="preview-badge">Preview</span>}
+      <div className="common-root">
 
         <Device>
         <AnimatePresence mode="wait" initial={false}>
