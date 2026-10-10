@@ -2018,7 +2018,11 @@ ol.md-list {
 }
 
 .composer-count {
-  align-self: center;
+  /* Sits beside the send button at the bottom, however tall the message grows. */
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  height: 32px;
   flex: none;
   font-size: 12px;
   font-weight: 550;
