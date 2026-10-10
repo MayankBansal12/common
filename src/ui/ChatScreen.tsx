@@ -1,7 +1,7 @@
 import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus } from 'lucide-react';
-import type { Activity, Invitation, Message, Person, Space, SpaceInput } from '../types';
+import type { Activity, Invitation, Message, Person, Space, SpaceInput, TypingPerson } from '../types';
 import { Avatar, SpaceBadge, Spinner } from './primitives';
 import { MembersDialog } from './MembersDialog';
 import { AgentAvatar } from './agents';
@@ -16,6 +16,7 @@ type Props = {
   user: Person;
   space: Space;
   messages: Message[];
+  typing: TypingPerson[];
   members: Person[];
   invitations: Invitation[];
   activities: Activity[];
@@ -24,6 +25,7 @@ type Props = {
   hasMoreMessages: boolean;
   onBack: () => void;
   onSendMessage: (body: string) => Promise<void>;
+  onTyping: (spaceId: string, typing: boolean) => void;
   onRetryMessage: (clientId: string) => void;
   onLoadMoreMessages: () => void;
   onInviteMember: (email: string) => Promise<void>;
@@ -75,6 +77,7 @@ export function ChatScreen(p: Props) {
   const [membersOpen, setMembersOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   useAmbientTint(space.color);
+  const typers = useActiveTypers(p.typing);
   const [scrolled, setScrolled] = useState(false);
   const [showJump, setShowJump] = useState(false);
   const [unseen, setUnseen] = useState(0);
@@ -136,6 +139,12 @@ export function ChatScreen(p: Props) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Keep the newest activity in view when someone starts typing and the reader is at the bottom.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && typers.length && atBottom.current) el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' });
+  }, [typers.length, reduce]);
 
   function onScroll() {
     const el = scrollRef.current;
@@ -263,6 +272,7 @@ export function ChatScreen(p: Props) {
               );
             })}
           </motion.ol>
+          <AnimatePresence>{typers.length > 0 && <TypingRow key="typing" people={typers} />}</AnimatePresence>
         </div>
       </div>
 
@@ -292,6 +302,7 @@ export function ChatScreen(p: Props) {
             key={`${user.id}:${space.id}`}
             draftKey={`common:draft:${user.id}:${space.id}`}
             spaceName={space.name}
+            onTyping={(typing) => p.onTyping(space.id, typing)}
             onSend={(body) => {
               stickNext.current = true;
               return p.onSendMessage(body);
@@ -434,6 +445,49 @@ function MessageBody({ body, startOpen }: { body: string; startOpen: boolean }) 
         </button>
       )}
     </>
+  );
+}
+
+/** Typing signals still within their lifetime, re-checked each second so lapsed ones disappear. */
+function useActiveTypers(typing: TypingPerson[]) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!typing.length) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [typing]);
+  return typing.filter((t) => t.expiresAt > now);
+}
+
+/** The "…" bubble from onboarding, for whoever is composing: avatar, first name, bouncing dots. */
+function TypingRow({ people }: { people: TypingPerson[] }) {
+  const lead = people[0];
+  const names = people.map((p) => firstName(p.name));
+  const label = names.length === 1 ? `${names[0]} is typing` : names.length === 2 ? `${names[0]} and ${names[1]} are typing` : `${names[0]} and ${names.length - 1} others are typing`;
+  return (
+    <motion.div
+      className="msg theirs typing-row"
+      data-first
+      data-last
+      role="status"
+      aria-label={label}
+      initial={{ opacity: 0, y: 10, scale: 0.94 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.15 } }}
+      transition={{ type: 'spring', stiffness: 520, damping: 32 }}
+      style={{ transformOrigin: '0% 100%' }}
+    >
+      <span className="msg-avatar">
+        <Avatar person={lead} size={28} />
+        <span className="msg-name">{people.length > 1 ? `${names[0]} +${people.length - 1}` : names[0]}</span>
+      </span>
+      <div className="bubble tail typing-dots" style={{ '--b-bg': tone(lead.color).bg, '--b-ink': tone(lead.color).ink } as CSSProperties} aria-hidden="true">
+        {[0, 1, 2].map((d) => (
+          <motion.i key={d} animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.9, repeat: Infinity, delay: d * 0.15 }} />
+        ))}
+      </div>
+    </motion.div>
   );
 }
 

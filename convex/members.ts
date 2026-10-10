@@ -1,7 +1,7 @@
 import { mutation, query } from './_generated/server';
 import { internal } from './_generated/api';
 import { ConvexError, v } from 'convex/values';
-import { hashColor, normalizeEmail, person, rateLimit, requireMember, requireOwner, requireUser } from './lib/access';
+import { hashColor, maskEmail, normalizeEmail, person, rateLimit, requireMember, requireOwner, requireUser } from './lib/access';
 import { emailConfigured } from './lib/email';
 export const list = query({ args: { spaceId: v.id('spaces') }, handler: async (ctx, { spaceId }) => {
   await requireMember(ctx, spaceId);
@@ -11,7 +11,11 @@ export const list = query({ args: { spaceId: v.id('spaces') }, handler: async (c
 export const invitations = query({ args: { spaceId: v.id('spaces') }, handler: async (ctx, { spaceId }) => {
   const { user, membership } = await requireMember(ctx, spaceId);
   const pending = await ctx.db.query('invitations').withIndex('by_space', q => q.eq('spaceId', spaceId)).collect();
-  return pending.filter(i => i.expiresAt > Date.now()).map(i => ({ id: i._id, email: i.email, createdAt: i._creationTime, canRevoke: membership.role === 'owner' || i.inviterId === user._id }));
+  return pending.filter(i => i.expiresAt > Date.now()).map(i => {
+    // Pending addresses are masked for everyone, the inviter included; revoking works by id.
+    const canRevoke = membership.role === 'owner' || i.inviterId === user._id;
+    return { id: i._id, email: maskEmail(i.email), createdAt: i._creationTime, canRevoke };
+  });
 }});
 export const pending = query({ args: {}, handler: async ctx => {
   const user = await requireUser(ctx);
@@ -83,5 +87,18 @@ export const remove = mutation({ args: { spaceId: v.id('spaces'), userId: v.id('
 export const activity = query({ args: { spaceId: v.id('spaces') }, handler: async (ctx, { spaceId }) => {
   await requireMember(ctx, spaceId);
   const events = await ctx.db.query('activities').withIndex('by_space', q => q.eq('spaceId', spaceId)).order('desc').take(50);
-  return Promise.all(events.map(async e => ({ id: e._id, kind: e.kind, actorName: (await person(ctx, e.actorId)).name, subject: e.subject, createdAt: e._creationTime })));
+  // Invite events store the invitee's email. Everyone in the space reads this feed, so show the
+  // person's name once they've joined, and otherwise a masked address, for everyone.
+  const members = await ctx.db.query('memberships').withIndex('by_space', q => q.eq('spaceId', spaceId)).collect();
+  const nameByEmail = new Map<string, string>();
+  for (const m of members) {
+    const who = await person(ctx, m.userId, true);
+    if (who.email) nameByEmail.set(who.email.trim().toLowerCase(), who.name);
+  }
+  const subjectFor = (e: (typeof events)[number]) => {
+    if (!e.subject || (e.kind !== 'member_invited' && e.kind !== 'invite_revoked')) return e.subject;
+    const email = e.subject.trim().toLowerCase();
+    return nameByEmail.get(email) ?? maskEmail(email);
+  };
+  return Promise.all(events.map(async e => ({ id: e._id, kind: e.kind, actorName: (await person(ctx, e.actorId)).name, subject: subjectFor(e), createdAt: e._creationTime })));
 }});

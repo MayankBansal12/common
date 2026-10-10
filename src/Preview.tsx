@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import CommonUI from './ui/CommonUI';
 import { emptyProps } from './App';
-import type { Activity, Invitation, Message, Person, Space } from './types';
+import type { Activity, Invitation, Message, Person, Space, TypingPerson } from './types';
 
 // In the preview, photos never leave the browser: undefined keeps, null removes, a Blob becomes an object URL.
 const photo = (image: Blob | null | undefined, current?: string) => (image === undefined ? current : image ? URL.createObjectURL(image) : undefined);
+// Mirrors the server: pending invitees appear as `an•••@gmail.com`.
+const mask = (email: string) => { const at = email.lastIndexOf('@'); return at < 1 ? '•••' : `${email.slice(0, at > 2 ? 2 : 1)}•••${email.slice(at)}`; };
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 const people: Person[] = [
@@ -27,29 +29,42 @@ const fixtures = [
 export default function Preview() {
   const [user, setUser] = useState(people[0]);
   const [members, setMembers] = useState(people);
-  const [spaces, setSpaces] = useState<Space[]>([{ id: 'studio', name: 'The studio', symbol: '✳', color: 0, memberCount: 3, unread: 0, updatedAt: now, lastMessage: 'That’s enough to start something.' }, { id: 'weekend', name: 'Weekend things', symbol: '☀', color: 3, memberCount: 1, unread: 0, updatedAt: now - 86_400_000 }]);
-  const [selected, setSelected] = useState<string | null>(new URLSearchParams(location.search).get('screen') === 'spaces' ? null : 'studio');
+  // `&screen=loading` holds the loading screen; `&screen=slow` plays a slow start (sign-in check, then the
+  // spaces list loading) so the splash and placeholders can be seen.
+  const loadingView = new URLSearchParams(location.search).get('screen') === 'loading';
+  const [slowPhase, setSlowPhase] = useState<'auth' | 'spaces' | 'ready'>(new URLSearchParams(location.search).get('screen') === 'slow' ? 'auth' : 'ready');
+  useEffect(() => {
+    if (slowPhase === 'ready') return;
+    const t = setTimeout(() => setSlowPhase(slowPhase === 'auth' ? 'spaces' : 'ready'), slowPhase === 'auth' ? 900 : 1400);
+    return () => clearTimeout(t);
+  }, [slowPhase]);
+  // `&screen=new` starts like a brand-new account: no spaces yet.
+  const fresh = new URLSearchParams(location.search).get('screen') === 'new';
+  const [spaces, setSpaces] = useState<Space[]>(fresh ? [] : [{ id: 'studio', name: 'The studio', symbol: '✳', color: 0, memberCount: 3, unread: 0, updatedAt: now, lastMessage: 'That’s enough to start something.' }, { id: 'weekend', name: 'Weekend things', symbol: '☀', color: 3, memberCount: 1, unread: 0, updatedAt: now - 86_400_000 }]);
+  const [selected, setSelected] = useState<string | null>(['spaces', 'new', 'slow'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? null : 'studio');
   const [messageMap, setMessageMap] = useState<Record<string, Message[]>>({ studio: fixtures.map(([id, body, minutes], i) => ({ id: `example-${i}`, clientId: `example-${i}`, body, sender: people.find(p => p.id === id)!, createdAt: now + minutes * 60_000, status: 'sent' })) });
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [activities, setActivities] = useState<Activity[]>([{ id: 'created', actorName: 'Mayank', kind: 'space_created', createdAt: now - 86_400_000 }]);
   const [signedOut, setSignedOut] = useState(new URLSearchParams(location.search).get('screen') === 'login');
+  // The preview has no other people, so after you send, Tara "types" for a moment to show the indicator.
+  const [typing, setTyping] = useState<TypingPerson[]>([]);
   const [emailStep, setEmailStep] = useState<'email' | 'code'>('email');
   const [emailAddress, setEmailAddress] = useState('');
   const space = spaces.find(s => s.id === selected) ?? null;
   const signIn = async () => { await wait(700); setSignedOut(false); setEmailStep('email'); };
   // Messages carry a snapshot of their sender; show the latest profile like the live app does.
   const messages = (selected ? messageMap[selected] ?? [] : []).map(m => ({ ...m, sender: members.find(p => p.id === m.sender.id) ?? m.sender }));
-  return <CommonUI {...emptyProps} screen={signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={spaces} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities}
+  return <CommonUI {...emptyProps} screen={loadingView || slowPhase === 'auth' ? 'loading' : signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={slowPhase === 'ready' ? spaces : []} isLoadingSpaces={slowPhase === 'spaces'} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities} typing={typing}
     authAvailable={{ google: true, email: true }} emailStep={emailStep} emailAddress={emailAddress}
     onGoogleSignIn={signIn}
     onEmailSignIn={async email => { await wait(600); setEmailAddress(email); setEmailStep('code'); }}
-    onVerifyCode={async code => { if (code !== '12345678') { await wait(500); throw new Error('That code didn’t work. In the preview, use 12345678.'); } await signIn(); }}
+    onVerifyCode={async code => { if (code !== '123456') { await wait(500); throw new Error('That code didn’t work. In the preview, use 123456.'); } await signIn(); }}
     onBackToEmail={() => setEmailStep('email')}
     onSignOut={async () => setSignedOut(true)} onSelectSpace={setSelected}
     onCreateSpace={async ({ name, symbol, color, image }) => { await wait(350); const id = crypto.randomUUID(); setSpaces(s => [{ id, name, symbol, color, imageUrl: photo(image), memberCount: 1, unread: 0, updatedAt: Date.now() }, ...s]); setMessageMap(m => ({ ...m, [id]: [] })); return id; }}
     onUpdateSpace={async ({ name, symbol, color, image }) => { await wait(350); setSpaces(s => s.map(x => x.id === selected ? { ...x, name, symbol, color, imageUrl: photo(image, x.imageUrl) } : x)); setActivities(a => [{ id: crypto.randomUUID(), actorName: user.name, kind: 'space_updated', createdAt: Date.now() }, ...a]); }}
-    onSendMessage={async body => { if (!selected) return; const id = crypto.randomUUID(); setMessageMap(m => ({ ...m, [selected]: [...m[selected] ?? [], { id, clientId: id, body, sender: user, createdAt: Date.now(), status: 'sent' }] })); }}
-    onInviteMember={async email => { const id = crypto.randomUUID(); setInvitations(i => [...i, { id, email, createdAt: Date.now() }]); setActivities(a => [{ id, actorName: user.name, kind: 'member_invited', subject: email, createdAt: Date.now() }, ...a]); }}
+    onSendMessage={async body => { if (!selected) return; setTimeout(() => setTyping([{ ...people[1], expiresAt: Date.now() + 3500 }]), 700); setTimeout(() => setTyping([]), 4200); const id = crypto.randomUUID(); setMessageMap(m => ({ ...m, [selected]: [...m[selected] ?? [], { id, clientId: id, body, sender: user, createdAt: Date.now(), status: 'sent' }] })); }}
+    onInviteMember={async email => { const id = crypto.randomUUID(); setInvitations(i => [...i, { id, email: mask(email), createdAt: Date.now(), canRevoke: true }]); setActivities(a => [{ id, actorName: user.name, kind: 'member_invited', subject: mask(email), createdAt: Date.now() }, ...a]); }}
     onRevokeInvite={async id => setInvitations(i => i.filter(x => x.id !== id))}
     onRemoveMember={async id => setMembers(m => m.filter(x => x.id !== id))}
     onUpdateProfile={async ({ name, image, avatarSeed = user.avatarSeed }) => { await wait(350); const imageUrl = photo(image, user.imageUrl); setUser(u => ({ ...u, name, imageUrl, avatarSeed })); setMembers(m => m.map(p => p.id === user.id ? { ...p, name, imageUrl, avatarSeed } : p)); }}

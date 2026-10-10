@@ -173,3 +173,41 @@ describe('emails', () => {
     expect(mail.text).toContain('https://common.example');
   });
 });
+
+describe('typing', () => {
+  test('shows other members typing, clears on stop or send, and hides from outsiders', async () => {
+    const { owner, guest, stranger, spaceId, join } = await setup(); await join();
+    await guest.mutation(api.messages.setTyping, { spaceId, typing: true });
+    expect(await guest.query(api.messages.typing, { spaceId })).toEqual([]);
+    const seen = await owner.query(api.messages.typing, { spaceId });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ name: 'Guest' });
+    expect(seen[0].expiresAt).toBeGreaterThan(Date.now());
+    await guest.mutation(api.messages.setTyping, { spaceId, typing: false });
+    expect(await owner.query(api.messages.typing, { spaceId })).toEqual([]);
+    await guest.mutation(api.messages.setTyping, { spaceId, typing: true });
+    await guest.mutation(api.messages.send, { spaceId, body: 'Done typing', clientId: 'typing-then-send-1' });
+    expect(await owner.query(api.messages.typing, { spaceId })).toEqual([]);
+    await expect(stranger.mutation(api.messages.setTyping, { spaceId, typing: true })).rejects.toThrow('access');
+    await expect(stranger.query(api.messages.typing, { spaceId })).rejects.toThrow('access');
+  });
+});
+
+describe('invitee privacy', () => {
+  test('masks invitee emails for everyone and names people once they join', async () => {
+    const { t, owner, guest, spaceId, join } = await setup(); await join();
+    const third = await t.run(ctx => ctx.db.insert('users', { name: 'Third', email: 'third.person@example.com', emailVerificationTime: Date.now() }));
+    await owner.mutation(api.members.invite, { spaceId, email: 'third.person@example.com' });
+    const invitedFor = async (who: typeof owner) => (await who.query(api.members.activity, { spaceId })).find(a => a.kind === 'member_invited' && a.subject?.includes('th'))?.subject;
+    expect(await invitedFor(owner)).toBe('th•••@example.com');
+    expect(await invitedFor(guest)).toBe('th•••@example.com');
+    expect((await guest.query(api.members.invitations, { spaceId }))[0].email).toBe('th•••@example.com');
+    expect((await owner.query(api.members.invitations, { spaceId }))[0]).toMatchObject({ email: 'th•••@example.com', canRevoke: true });
+    const invitationId = (await owner.query(api.members.invitations, { spaceId }))[0].id;
+    await t.withIdentity({ subject: third }).mutation(api.members.accept, { invitationId: invitationId as never });
+    const guestInvite = (await guest.query(api.members.activity, { spaceId })).find(a => a.kind === 'member_invited' && a.subject === 'Third');
+    expect(guestInvite).toBeTruthy();
+    // The guest's own invite (accepted earlier) now reads with their name, for everyone.
+    expect((await owner.query(api.members.activity, { spaceId })).some(a => a.kind === 'member_invited' && a.subject === 'Guest')).toBe(true);
+  });
+});

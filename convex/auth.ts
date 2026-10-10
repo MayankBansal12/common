@@ -3,17 +3,19 @@ import { Email } from '@convex-dev/auth/providers/Email';
 import { convexAuth } from '@convex-dev/auth/server';
 import { emailConfigured, sendEmail, signInCodeEmail } from './lib/email';
 
+const CODE_DIGITS = 6;
 const email = Email({
   id: 'resend-otp',
   apiKey: process.env.AUTH_RESEND_KEY,
   maxAge: 60 * 10,
   normalizeIdentifier: identifier => identifier.trim().toLowerCase(),
   async generateVerificationToken() {
-    // Rejection sampling avoids modulo bias in the eight-digit code.
+    // Rejection sampling avoids modulo bias in the six-digit code. Codes expire after ten minutes,
+    // and Convex Auth limits failed attempts, which keeps six digits safe to guess against.
     let code = '';
-    while (code.length < 8) {
+    while (code.length < CODE_DIGITS) {
       const bytes = crypto.getRandomValues(new Uint8Array(16));
-      for (const byte of bytes) if (byte < 250 && code.length < 8) code += byte % 10;
+      for (const byte of bytes) if (byte < 250 && code.length < CODE_DIGITS) code += byte % 10;
     }
     return code;
   },

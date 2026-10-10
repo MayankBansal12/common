@@ -55,6 +55,8 @@ import { MESSAGE_LIMIT } from './format';
 import { readSession, usePrefersFinePointer, writeSession } from './hooks';
 
 const COUNTDOWN_FROM = 200;
+// Below the server's 6s typing lifetime, so a steady typist never flickers off.
+const TYPING_REFRESH = 3_000;
 
 /*
  * The composer is a small rich-text editor: Markdown typed into it turns into formatting as you
@@ -109,11 +111,13 @@ export function Composer({
   draftKey,
   spaceName,
   onSend,
+  onTyping,
   isQueued,
 }: {
   draftKey: string;
   spaceName: string;
   onSend: (body: string) => Promise<void>;
+  onTyping: (typing: boolean) => void;
   isQueued: (body: string) => boolean;
 }) {
   const [initial] = useState(() => readSession(draftKey));
@@ -134,6 +138,7 @@ export function Composer({
         markdown={markdown}
         setMarkdown={setMarkdown}
         onSend={onSend}
+        onTyping={onTyping}
         isQueued={isQueued}
       />
     </LexicalComposer>
@@ -146,6 +151,7 @@ function ComposerBody({
   markdown,
   setMarkdown,
   onSend,
+  onTyping,
   isQueued,
 }: {
   draftKey: string;
@@ -153,6 +159,7 @@ function ComposerBody({
   markdown: string;
   setMarkdown: (md: string) => void;
   onSend: (body: string) => Promise<void>;
+  onTyping: (typing: boolean) => void;
   isQueued: (body: string) => boolean;
 }) {
   const [editor] = useLexicalComposerContext();
@@ -167,6 +174,29 @@ function ComposerBody({
   useEffect(() => {
     writeSession(draftKey, markdown);
   }, [draftKey, markdown]);
+
+  // Typing signal: refresh every few seconds while there's text, stop when it empties or the composer
+  // closes. The latest callback is kept in a ref so unmounting reports to the space it belonged to.
+  const typingRef = useRef({ onTyping, sentAt: 0 });
+  typingRef.current.onTyping = onTyping;
+  useEffect(() => {
+    const t = typingRef.current;
+    if (body) {
+      if (Date.now() - t.sentAt > TYPING_REFRESH) {
+        t.sentAt = Date.now();
+        t.onTyping(true);
+      }
+    } else if (t.sentAt) {
+      t.sentAt = 0;
+      t.onTyping(false);
+    }
+  }, [body]);
+  useEffect(() => {
+    const t = typingRef.current;
+    return () => {
+      if (t.sentAt) t.onTyping(false);
+    };
+  }, []);
 
   useEffect(() => {
     if (fine) editor.focus(undefined, { defaultSelection: 'rootEnd' });

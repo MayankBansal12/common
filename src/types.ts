@@ -1,6 +1,8 @@
 export type Person = { id: string; name: string; email: string; avatarSeed: string; color: number; role?: 'owner' | 'member'; imageUrl?: string };
 export type Space = { id: string; name: string; symbol: string; color: number; imageUrl?: string; memberCount: number; unread: number; lastMessage?: string; updatedAt: number };
 export type Message = { id: string; clientId: string; body: string; sender: Person; createdAt: number; status?: 'sending' | 'sent' | 'failed' };
+/** Someone composing a message right now; `expiresAt` (ms) is when the signal lapses without a refresh. */
+export type TypingPerson = Person & { expiresAt: number };
 export type Invitation = { id: string; email: string; createdAt: number; canRevoke?: boolean };
 export type PendingInvitation = { id: string; spaceName: string; inviterName: string };
 export type Activity = { id: string; kind: 'space_created' | 'member_invited' | 'member_joined' | 'member_removed' | 'invite_revoked' | 'space_updated'; actorName: string; subject?: string; createdAt: number };
@@ -17,8 +19,11 @@ export interface CommonUIProps {
   invitations: Invitation[];
   pendingInvitations: PendingInvitation[];
   activities: Activity[];
+  typing: TypingPerson[];
   isOnline: boolean;
   isLoadingMessages: boolean;
+  /** The spaces list hasn't arrived yet (show placeholders, not the first-space welcome). */
+  isLoadingSpaces?: boolean;
   hasMoreMessages: boolean;
   error: string | null;
   emailStep: 'email' | 'code';
@@ -35,6 +40,8 @@ export interface CommonUIProps {
   onUpdateSpace: (input: SpaceInput) => Promise<void>;
   onSelectSpace: (id: string | null) => void;
   onSendMessage: (body: string) => Promise<void>;
+  /** Called while composing (`true`, repeatedly) and when the composer empties or closes (`false`). */
+  onTyping: (spaceId: string, typing: boolean) => void;
   onRetryMessage: (clientId: string) => void;
   onLoadMoreMessages: () => void;
   onInviteMember: (email: string) => Promise<void>;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion, type PanInfo } from 'motion/react';
 import { Check, ChevronLeft, Mail } from 'lucide-react';
 import type { CommonUIProps } from '../types';
-import { Avatar, InlineError, MARK_CIRCLES, MARK_R, Spinner } from './primitives';
+import { AnimatedMark, Avatar, InlineError, Spinner } from './primitives';
 import { AGENTS, AgentAvatar, type Agent } from './agents';
 import { useAmbientTint } from './Device';
 import { tone } from './palette';
@@ -13,7 +13,7 @@ type Props = Pick<
   'error' | 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onDismissError'
 >;
 
-const CODE_LENGTH = 8;
+const CODE_LENGTH = 6;
 const RESEND_AFTER = 30;
 const AUTOPLAY_MS = 5200;
 const ease = [0.2, 0.7, 0.2, 1] as const;
@@ -212,7 +212,8 @@ function Welcome(p: {
       <motion.div className="onb-glow" animate={{ background: `radial-gradient(120% 70% at 50% 0%, ${t.bg} 0%, ${t.bg}00 72%)` }} transition={{ duration: 0.8 }} />
 
       <motion.div className="onb-carousel" drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={0.18} onDragEnd={onDragEnd}>
-        <AnimatePresence initial={false} custom={dir} mode="popLayout">
+        {/* Unlike the stage around it, the first slide animates in, art and all. */}
+        <AnimatePresence custom={dir} mode="popLayout">
           <motion.div
             key={index}
             className="onb-slide"
@@ -308,37 +309,12 @@ function OrbitArt() {
     { x: 4, y: 104, s: 40, who: 3 },
     { x: -14, y: -112, s: 34, who: 4 },
   ];
-  // Each circle starts pushed outward from the centre of the mark, then settles into place.
-  const from = MARK_CIRCLES.map((c) => ({ cx: 12 + (c.cx - 12) * 2.4, cy: 12 + (c.cy - 12) * 2.4 }));
-  const settle = { duration: 1, ease, delay: 0.2 };
   return (
     <div className="art art-orbit" aria-hidden="true">
       <motion.span className="art-ring" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.9, ease }} />
       <motion.span className="art-ring r2" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 1.1, ease, delay: 0.05 }} />
       <motion.span className="art-mark" initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 18 }}>
-        <svg width="70" height="70" viewBox="0 0 24 24" fill="none" overflow="visible">
-          <defs>
-            <clipPath id="onb-a">
-              <circle cx={MARK_CIRCLES[0].cx} cy={MARK_CIRCLES[0].cy} r={MARK_R} />
-            </clipPath>
-            <clipPath id="onb-b" clipPath="url(#onb-a)">
-              <circle cx={MARK_CIRCLES[1].cx} cy={MARK_CIRCLES[1].cy} r={MARK_R} />
-            </clipPath>
-          </defs>
-          <motion.circle
-            cx={MARK_CIRCLES[2].cx}
-            cy={MARK_CIRCLES[2].cy}
-            r={MARK_R}
-            fill="currentColor"
-            clipPath="url(#onb-b)"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.4, delay: 1.05 }}
-          />
-          {MARK_CIRCLES.map((c, i) => (
-            <motion.circle key={i} r={MARK_R} stroke="currentColor" strokeWidth="1.3" initial={from[i]} animate={{ cx: c.cx, cy: c.cy }} transition={settle} />
-          ))}
-        </svg>
+        <AnimatedMark size={70} />
       </motion.span>
       {spots.map((spot, i) => (
         <motion.span

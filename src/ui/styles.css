@@ -498,20 +498,52 @@ fieldset {
   color: var(--ink);
 }
 
-.breathe {
-  animation: breathe 1.8s ease-in-out infinite;
+.splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Sit a touch above centre, where the eye lands on a phone. */
+  margin-bottom: 6vh;
 }
-
-@keyframes breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.96);
-  }
-  50% {
-    opacity: 1;
+.splash-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  border-radius: 28px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), 0 18px 40px -18px rgba(28, 28, 26, 0.35);
+}
+/* Once the mark has assembled, a soft ring keeps rippling out while loading continues. */
+.splash-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 1.5px var(--line-2);
+  opacity: 0;
+  animation: splash-ripple 2.4s ease-out 1.3s infinite;
+}
+@keyframes splash-ripple {
+  0% {
+    opacity: 0.9;
     transform: scale(1);
   }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+.splash-name {
+  margin-top: 22px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.splash-line {
+  margin-top: 4px;
+  font-size: 13.5px;
+  color: var(--ink-3);
 }
 
 .spin {
@@ -1048,8 +1080,8 @@ fieldset {
 .otp {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
 }
 .otp-input {
   position: absolute;
@@ -1655,7 +1687,8 @@ fieldset {
   top: 100%;
   left: 50%;
   translate: -50% 0;
-  max-width: 52px; /* centred under the avatar without running past the edge */
+  /* Centred under the 28px avatar; at most 8px of overhang per side, inside the 12px gutter. */
+  max-width: 44px;
   margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1750,6 +1783,24 @@ fieldset {
 }
 .read-more:hover {
   text-decoration-color: currentColor;
+}
+
+.typing-row {
+  margin-top: 10px;
+}
+.bubble.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 14px;
+}
+.typing-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
 }
 
 .bubble.jumbo {
@@ -2559,9 +2610,103 @@ ol.md-list {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  .breathe {
+  .splash-ripple,
+  .skeleton {
     animation: none;
   }
+}
+
+/* ───────── Loading placeholders ───────── */
+
+.skeleton {
+  display: block;
+  height: 10px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(28, 28, 26, 0.06) 25%, rgba(28, 28, 26, 0.1) 45%, rgba(28, 28, 26, 0.06) 65%);
+  background-size: 300% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+.skeleton-label {
+  width: 52px;
+  height: 9px;
+  margin: 6px 12px 12px;
+}
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+.skeleton-badge {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 32%;
+}
+.skeleton-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* ───────── First space ───────── */
+
+.first-space {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 64px 20px 32px;
+  text-align: center;
+}
+.first-space-mark {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 28px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line), 0 18px 40px -18px rgba(28, 28, 26, 0.35);
+}
+.first-space-title {
+  margin-top: 22px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.first-space-body {
+  margin-top: 8px;
+  max-width: 280px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.first-space-cta {
+  margin-top: 24px;
+  padding: 0 22px;
+}
+.first-space-note {
+  margin-top: 18px;
+  max-width: 270px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+.first-space-note strong {
+  color: var(--ink-2);
+  font-weight: 600;
+  word-break: break-all;
 }
 
 /* ───────── Empty chat ───────── */

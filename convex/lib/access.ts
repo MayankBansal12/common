@@ -57,4 +57,11 @@ export async function nextImage(ctx: MutationCtx, next: Id<'_storage'> | null | 
   if (next === undefined) return current;
   return next === null ? undefined : checkImage(ctx, next);
 }
+/** `anomayank@gmail.com` → `an•••@gmail.com`: recognisable to people who know it, useless to anyone else. */
+export function maskEmail(email: string) {
+  const at = email.lastIndexOf('@');
+  if (at < 1) return '•••';
+  const local = email.slice(0, at);
+  return `${local.slice(0, local.length > 2 ? 2 : 1)}•••${email.slice(at)}`;
+}
 export function hashColor(seed: string) { return Array.from(seed).reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0) % 8; }
