@@ -498,20 +498,52 @@ fieldset {
   color: var(--ink);
 }
 
-.breathe {
-  animation: breathe 1.8s ease-in-out infinite;
+.splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Sit a touch above centre, where the eye lands on a phone. */
+  margin-bottom: 6vh;
 }
-
-@keyframes breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.96);
-  }
-  50% {
-    opacity: 1;
+.splash-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  border-radius: 28px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), 0 18px 40px -18px rgba(28, 28, 26, 0.35);
+}
+/* Once the mark has assembled, a soft ring keeps rippling out while loading continues. */
+.splash-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 1.5px var(--line-2);
+  opacity: 0;
+  animation: splash-ripple 2.4s ease-out 1.3s infinite;
+}
+@keyframes splash-ripple {
+  0% {
+    opacity: 0.9;
     transform: scale(1);
   }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+.splash-name {
+  margin-top: 22px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.splash-line {
+  margin-top: 4px;
+  font-size: 13.5px;
+  color: var(--ink-3);
 }
 
 .spin {
@@ -2578,7 +2610,7 @@ ol.md-list {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  .breathe {
+  .splash-ripple {
     animation: none;
   }
 }

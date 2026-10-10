@@ -3,6 +3,8 @@
 export const SITE = {
   name: 'Common',
   tagline: 'A common space for you, your people and your agents.',
+  // The short form, for tight spots like the loading screen.
+  short: 'A shared space',
   title: 'Common · A common space for you, your people and your agents',
   // Matches the app's surfaces: --panel for browser chrome, --page behind it.
   themeColor: '#fdfdfc',

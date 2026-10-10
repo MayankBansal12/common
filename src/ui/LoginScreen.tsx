@@ -212,7 +212,8 @@ function Welcome(p: {
       <motion.div className="onb-glow" animate={{ background: `radial-gradient(120% 70% at 50% 0%, ${t.bg} 0%, ${t.bg}00 72%)` }} transition={{ duration: 0.8 }} />
 
       <motion.div className="onb-carousel" drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={0.18} onDragEnd={onDragEnd}>
-        <AnimatePresence initial={false} custom={dir} mode="popLayout">
+        {/* Unlike the stage around it, the first slide animates in, art and all. */}
+        <AnimatePresence custom={dir} mode="popLayout">
           <motion.div
             key={index}
             className="onb-slide"

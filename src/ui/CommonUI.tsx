@@ -1,7 +1,8 @@
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { X } from 'lucide-react';
 import type { CommonUIProps } from '../types';
-import { BrandMark } from './primitives';
+import { AnimatedMark } from './primitives';
+import { SITE } from '../site';
 import { Device } from './Device';
 import { LoginScreen } from './LoginScreen';
 import { SpacesScreen } from './SpacesScreen';
@@ -21,7 +22,8 @@ export default function CommonUI(props: CommonUIProps) {
       <div className="common-root">
 
         <Device>
-        <AnimatePresence mode="wait" initial={false}>
+        {/* Entrance animations run on first load too, so the splash and first screen assemble. */}
+        <AnimatePresence mode="wait">
           {view === 'loading' ? (
             <motion.div
               key="loading"
@@ -33,7 +35,7 @@ export default function CommonUI(props: CommonUIProps) {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <BrandMark size={30} className="breathe" />
+              <Splash />
             </motion.div>
           ) : (
             <motion.main
@@ -64,7 +66,7 @@ export default function CommonUI(props: CommonUIProps) {
                 </AnimatePresence>
               )}
 
-              <AnimatePresence mode="wait" initial={false}>
+              <AnimatePresence mode="wait">
                 <motion.div
                   key={view === 'chat' ? `chat:${props.activeSpace?.id}` : view}
                   className="view"
@@ -118,5 +120,28 @@ export default function CommonUI(props: CommonUIProps) {
         </Device>
       </div>
     </MotionConfig>
+  );
+}
+
+/** Loading: the mark assembles as in onboarding, the name and short line follow, and a soft ripple keeps it alive. */
+function Splash() {
+  const rise = (delay: number) => ({
+    initial: { opacity: 0, y: 8 },
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 0.5, delay, ease },
+  });
+  return (
+    <div className="splash">
+      <motion.span className="splash-mark" initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 20 }}>
+        <span className="splash-ripple" aria-hidden="true" />
+        <AnimatedMark size={54} delay={0.1} strokeWidth={1.4} />
+      </motion.span>
+      <motion.span className="splash-name" {...rise(0.35)}>
+        {SITE.name}
+      </motion.span>
+      <motion.span className="splash-line" {...rise(0.45)}>
+        {SITE.short}
+      </motion.span>
+    </div>
   );
 }

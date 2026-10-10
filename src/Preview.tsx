@@ -27,6 +27,8 @@ const fixtures = [
 export default function Preview() {
   const [user, setUser] = useState(people[0]);
   const [members, setMembers] = useState(people);
+  // `&screen=loading` holds the loading screen so it can be inspected.
+  const loadingView = new URLSearchParams(location.search).get('screen') === 'loading';
   // `&screen=new` starts like a brand-new account: no spaces yet.
   const fresh = new URLSearchParams(location.search).get('screen') === 'new';
   const [spaces, setSpaces] = useState<Space[]>(fresh ? [] : [{ id: 'studio', name: 'The studio', symbol: '✳', color: 0, memberCount: 3, unread: 0, updatedAt: now, lastMessage: 'That’s enough to start something.' }, { id: 'weekend', name: 'Weekend things', symbol: '☀', color: 3, memberCount: 1, unread: 0, updatedAt: now - 86_400_000 }]);
@@ -43,7 +45,7 @@ export default function Preview() {
   const signIn = async () => { await wait(700); setSignedOut(false); setEmailStep('email'); };
   // Messages carry a snapshot of their sender; show the latest profile like the live app does.
   const messages = (selected ? messageMap[selected] ?? [] : []).map(m => ({ ...m, sender: members.find(p => p.id === m.sender.id) ?? m.sender }));
-  return <CommonUI {...emptyProps} screen={signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={spaces} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities} typing={typing}
+  return <CommonUI {...emptyProps} screen={loadingView ? 'loading' : signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={spaces} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities} typing={typing}
     authAvailable={{ google: true, email: true }} emailStep={emailStep} emailAddress={emailAddress}
     onGoogleSignIn={signIn}
     onEmailSignIn={async email => { await wait(600); setEmailAddress(email); setEmailStep('code'); }}
