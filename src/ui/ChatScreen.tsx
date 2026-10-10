@@ -1,5 +1,5 @@
 import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus } from 'lucide-react';
 import type { Activity, Invitation, Message, Person, Space, SpaceInput } from '../types';
 import { Avatar, SpaceBadge, Spinner } from './primitives';
@@ -399,21 +399,33 @@ function MessageBody({ body, startOpen }: { body: string; startOpen: boolean }) 
     return () => ro.disconnect();
   }, []);
 
-  // Collapsing is instant (a plain style, so nothing flashes when a chat opens); only expanding animates.
+  // Collapsing is instant (a CSS height, so nothing flashes when a chat opens); only expanding
+  // animates, as a height transition from the collapsed height to the measured full height. The
+  // inline height is owned here, not by React, so re-rendering can't cut the transition short.
   function expand() {
-    setOpen(true);
     const el = outer.current;
     const full = inner.current?.offsetHeight;
+    setOpen(true);
     if (!el || !full || reduce) return;
-    void animate(el, { height: [COLLAPSED_HEIGHT, full] }, { type: 'spring', stiffness: 240, damping: 32 }).then(() => {
-      el.style.height = '';
+    el.style.height = `${COLLAPSED_HEIGHT}px`;
+    el.dataset.expanding = '';
+    requestAnimationFrame(() => {
+      el.style.height = `${full}px`;
+      el.addEventListener(
+        'transitionend',
+        () => {
+          el.style.height = '';
+          delete el.dataset.expanding;
+        },
+        { once: true },
+      );
     });
   }
 
   const collapsed = tall && !open;
   return (
     <>
-      <div ref={outer} className="msg-body" data-collapsed={collapsed || undefined} style={collapsed ? { height: COLLAPSED_HEIGHT } : undefined}>
+      <div ref={outer} className="msg-body" data-collapsed={collapsed || undefined}>
         <div ref={inner}>{renderMessage(body)}</div>
       </div>
       {collapsed && (

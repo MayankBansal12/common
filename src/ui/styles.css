@@ -1731,7 +1731,11 @@ fieldset {
 .msg-body {
   overflow: hidden;
 }
+.msg-body[data-expanding] {
+  transition: height 0.45s var(--spring);
+}
 .msg-body[data-collapsed] {
+  height: 250px; /* COLLAPSED_HEIGHT in ChatScreen.tsx */
   mask-image: linear-gradient(#000 calc(100% - 64px), transparent);
 }
 .read-more {
