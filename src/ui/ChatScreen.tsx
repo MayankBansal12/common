@@ -331,27 +331,26 @@ function EmptyChat({ space, user, members, onSayHi, onInvite }: { space: Space; 
       <div className="circle-row" aria-label="Who this space is for">
         <motion.div className="seat" {...enter(0)}>
           <span className="seat-ring">
-            <Avatar person={user} size={56} />
+            <Avatar person={user} size={40} />
           </span>
           <span className="seat-label">You</span>
         </motion.div>
         <motion.div className="seat" {...enter(1)}>
           {others.length ? (
             <span className="seat-ring" title={others.map((o) => o.name).join(', ')}>
-              <Avatar person={others[0]} size={56} />
+              <Avatar person={others[0]} size={40} />
               {others.length > 1 && <span className="seat-count">+{others.length - 1}</span>}
             </span>
           ) : (
             <button type="button" className="seat-ring seat-empty" onClick={onInvite} aria-label="Invite people" title="Invite people">
-              <UserPlus size={20} aria-hidden="true" />
+              <UserPlus size={16} aria-hidden="true" />
             </button>
           )}
           <span className="seat-label">People</span>
         </motion.div>
         <motion.div className="seat" {...enter(2)}>
-          <span className="seat-ring seat-empty seat-agents" aria-hidden="true">
-            <AgentAvatar agent="chatgpt" size={24} />
-            <AgentAvatar agent="claude" size={24} />
+          <span className="seat-ring" aria-hidden="true">
+            <AgentAvatar agent="claude" size={40} />
           </span>
           <span className="seat-label">Agents</span>
         </motion.div>
