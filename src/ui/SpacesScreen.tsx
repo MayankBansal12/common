@@ -92,6 +92,17 @@ export function SpacesScreen(p: Props) {
                   <LogOut size={14} aria-hidden="true" />
                   Sign out
                 </DropdownMenu.Item>
+                <DropdownMenu.Separator className="menu-sep" />
+                <DropdownMenu.Item className="menu-item menu-link" asChild>
+                  <a href="/privacy" target="_blank" rel="noopener">
+                    Privacy Policy
+                  </a>
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className="menu-item menu-link" asChild>
+                  <a href="/terms" target="_blank" rel="noopener">
+                    Terms of Service
+                  </a>
+                </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
