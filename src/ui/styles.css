@@ -1728,6 +1728,26 @@ fieldset {
   left: -10px;
   border-bottom-right-radius: 10px;
 }
+.msg-body {
+  overflow: hidden;
+}
+.msg-body[data-collapsed] {
+  mask-image: linear-gradient(#000 calc(100% - 64px), transparent);
+}
+.read-more {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 650;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 2px;
+}
+.read-more:hover {
+  text-decoration-color: currentColor;
+}
+
 .bubble.jumbo {
   padding: 0 2px;
   background: none;

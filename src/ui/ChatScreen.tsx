@@ -370,6 +370,50 @@ function EmptyChat({ space, user, members, onSayHi, onInvite }: { space: Space; 
   );
 }
 
+// Messages taller than ~17 lines collapse to ~13 with a fade and "Read more" (as in WhatsApp),
+// so one long message can't take over the thread.
+const COLLAPSE_OVER = 330;
+const COLLAPSED_HEIGHT = 250;
+
+function MessageBody({ body, startOpen }: { body: string; startOpen: boolean }) {
+  const inner = useRef<HTMLDivElement>(null);
+  const [tall, setTall] = useState(false);
+  // A message you've just sent shows in full once; everything else starts collapsed.
+  const [open, setOpen] = useState(startOpen);
+
+  useLayoutEffect(() => {
+    const el = inner.current;
+    if (!el) return;
+    // offsetHeight is layout size, unaffected by the phone's scaling or the bubble's entry animation.
+    const measure = () => setTall(el.offsetHeight > COLLAPSE_OVER);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const collapsed = tall && !open;
+  return (
+    <>
+      <motion.div
+        className="msg-body"
+        data-collapsed={collapsed || undefined}
+        initial={false}
+        animate={{ height: collapsed ? COLLAPSED_HEIGHT : 'auto' }}
+        transition={{ type: 'spring', stiffness: 240, damping: 32 }}
+      >
+        <div ref={inner}>{renderMessage(body)}</div>
+      </motion.div>
+      {collapsed && (
+        <button type="button" className="read-more" aria-expanded={false} onClick={() => setOpen(true)}>
+          Read more
+        </button>
+      )}
+    </>
+  );
+}
+
 const MessageRow = memo(function MessageRow({
   m,
   mine,
@@ -422,7 +466,7 @@ const MessageRow = memo(function MessageRow({
           title={time}
         >
           <span className="sr-only">{mine ? 'You' : m.sender.name}: </span>
-          {jumbo ? m.body.trim() : renderMessage(m.body)}
+          {jumbo ? m.body.trim() : <MessageBody body={m.body} startOpen={mine && animate} />}
         </div>
         {status === 'sending' && <span className="msg-status">Sending…</span>}
         {status === 'failed' && (

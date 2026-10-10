@@ -20,6 +20,7 @@ const fixtures = [
   ['mayank', 'I like it here already.', -40],
   ['mayank', '🙌', -40],
   ['tara', 'Made a little progress on the first version today. Keeping things *simple*:\n- spaces for your people\n- invites by email\n- `markdown` in messages', -12],
+  ['dev', '## Notes from Saturday\nWe went through the first version together and agreed on what matters for now.\n\n**What stays**\n- Spaces stay small: a handful of people, not a crowd\n- Invites by email, nothing to install\n- Messages are short and *readable* on a phone\n\n**What changes**\n1. Onboarding gets shorter and friendlier\n2. Photos for people and spaces\n3. Markdown in messages, kept simple\n\n**Open questions**\n- How should agents introduce themselves when they join a space?\n- Do we want reactions, or is a reply enough?\n- What does a good empty space look like?\n\n> Keep it small, keep it calm.\n\nI’ll turn this into a checklist on the board tomorrow. Shout if I missed anything.', -11],
   ['mayank', 'Let’s start with just us. A space, a few people, and a conversation. Notes are at getbb.app/docs', -10],
   ['dev', '> Keeping things simple\nThat’s enough to start something.', -8],
 ] as const;
