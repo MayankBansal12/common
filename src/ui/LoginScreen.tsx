@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { AnimatePresence, motion, useAnimationControls, useReducedMotion, type PanInfo } from 'motion/react';
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react';
+import { AnimatePresence, animate, motion, useAnimationControls, useMotionValue, useReducedMotion, type PanInfo } from 'motion/react';
 import { Check, ChevronLeft, Mail } from 'lucide-react';
 import type { CommonUIProps } from '../types';
 import { AnimatedMark, Avatar, InlineError, Spinner } from './primitives';
@@ -180,75 +180,102 @@ function Welcome(p: {
   onGoogle: () => void;
   onEmail: () => void;
 }) {
-  const [[index, dir], setPage] = useState<[number, number]>([0, 1]);
-  const [autoplay, setAutoplay] = useState(true);
+  const [index, setIndex] = useState(0);
   const [held, setHeld] = useState(false);
   const reduce = useReducedMotion();
   const slide = SLIDES[index];
   useAmbientTint(slide.tint);
 
-  const paginate = (step: number, manual = true) => {
-    if (manual) setAutoplay(false);
-    setPage(([i]) => [(i + step + SLIDES.length) % SLIDES.length, step]);
-  };
+  const pager = useRef<HTMLDivElement>(null);
+  const width = useWidth(pager);
+  const x = useMotionValue(0);
+  const fade = useMotionValue(1);
+  const wrapping = useRef(false);
 
-  // The active dot's fill is the timer: the slide advances when it finishes, so the two never drift,
-  // and holding the carousel (like a story) pauses both.
-  const playing = autoplay && !reduce;
+  // Slides sit side by side and the track springs to the current one. Wrapping from the last slide
+  // back to the first dissolves instead of rewinding past every slide in between.
+  useEffect(() => {
+    if (!width) return;
+    const to = -index * width;
+    if (reduce) {
+      x.set(to);
+      return;
+    }
+    if (wrapping.current) {
+      wrapping.current = false;
+      const out = animate(fade, 0, { duration: 0.22, ease: 'easeOut' });
+      void out.then(() => {
+        x.set(to);
+        void animate(fade, 1, { duration: 0.32, ease: 'easeOut' });
+      });
+      return () => out.stop();
+    }
+    const c = animate(x, to, slideSpring);
+    return () => c.stop();
+  }, [index, width, reduce, x, fade]);
+
+  const goTo = (i: number) => setIndex(Math.max(0, Math.min(SLIDES.length - 1, i)));
+  const advance = () => {
+    if (index === SLIDES.length - 1) wrapping.current = true;
+    setIndex((index + 1) % SLIDES.length);
+  };
 
   function onDragEnd(_: unknown, info: PanInfo) {
     setHeld(false);
-    const swipe = info.offset.x + info.velocity.x * 0.2;
-    if (swipe < -60) paginate(1);
-    else if (swipe > 60) paginate(-1);
+    const threshold = width * 0.18;
+    if ((info.offset.x < -threshold || info.velocity.x < -450) && index < SLIDES.length - 1) goTo(index + 1);
+    else if ((info.offset.x > threshold || info.velocity.x > 450) && index > 0) goTo(index - 1);
+    else void animate(x, -index * width, slideSpring); // not far enough: settle back
   }
 
+  // Pressing anywhere on the slides pauses the timer (like a story), wherever the finger lifts.
+  function hold() {
+    setHeld(true);
+    const release = () => {
+      setHeld(false);
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+  }
+
+  const playing = !reduce;
   const t = tone(slide.tint);
   return (
     <div className="onb-welcome">
       <motion.div className="onb-glow" animate={{ background: `radial-gradient(120% 70% at 50% 0%, ${t.bg} 0%, ${t.bg}00 72%)` }} transition={{ duration: 0.8 }} />
 
-      <motion.div
-        className="onb-carousel"
-        drag="x"
-        dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={0.18}
-        onDragEnd={onDragEnd}
-        onPointerDown={() => setHeld(true)}
-        onPointerUp={() => setHeld(false)}
-        onPointerCancel={() => setHeld(false)}
-        onPointerLeave={() => setHeld(false)}
-      >
-        {/* Unlike the stage around it, the first slide animates in, art and all. */}
-        <AnimatePresence custom={dir} mode="popLayout">
-          <motion.div
-            key={index}
-            className="onb-slide"
-            custom={dir}
-            variants={{
-              enter: (d: number) => ({ x: d > 0 ? 70 : -70, opacity: 0 }),
-              center: { x: 0, opacity: 1 },
-              exit: (d: number) => ({ x: d > 0 ? -70 : 70, opacity: 0 }),
-            }}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ x: { type: 'spring', stiffness: 300, damping: 34 }, opacity: { duration: 0.22 } }}
-          >
-            <div className="onb-art">
-              <slide.Art />
+      <div className="onb-pager" ref={pager} onPointerDown={hold}>
+        <motion.div
+          className="onb-track"
+          style={{ x, opacity: fade }}
+          drag={width ? 'x' : false}
+          dragConstraints={{ left: -(SLIDES.length - 1) * width, right: 0 }}
+          dragElastic={0.12}
+          dragMomentum={false}
+          onDragEnd={onDragEnd}
+        >
+          {SLIDES.map((s, i) => (
+            <div key={i} className="onb-slide" aria-hidden={i !== index || undefined} inert={i !== index || undefined}>
+              <div className="onb-art">
+                {/* Each illustration assembles as its slide arrives; it lingers while sliding away. */}
+                <AnimatePresence>
+                  {i === index && (
+                    <motion.div key="art" className="onb-art-play" exit={{ opacity: 0, transition: { delay: 0.5, duration: 0 } }}>
+                      <s.Art />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <h1 className="onb-title">{s.title}</h1>
+              <p className="onb-body">{s.body}</p>
             </div>
-            <motion.h1 className="onb-title" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08, duration: 0.4, ease }}>
-              {slide.title}
-            </motion.h1>
-            <motion.p className="onb-body" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14, duration: 0.4, ease }}>
-              {slide.body}
-            </motion.p>
-          </motion.div>
-        </AnimatePresence>
-      </motion.div>
+          ))}
+        </motion.div>
+      </div>
 
-      <div className="onb-dots" role="tablist" aria-label="Introduction" data-held={held || undefined}>
+      <div className="onb-dots" role="tablist" aria-label="Introduction">
         {SLIDES.map((s, i) => (
           <button
             key={i}
@@ -257,16 +284,19 @@ function Welcome(p: {
             aria-selected={i === index}
             aria-label={`Slide ${i + 1} of ${SLIDES.length}`}
             className="onb-dot"
-            onClick={() => i !== index && paginate(i - index)}
+            onClick={() => goTo(i)}
           >
             <span className="onb-dot-track">
               {i === index && (
+                // The fill is the timer: the slide advances when it completes, so the two can't drift.
+                // Without autoplay it simply rests full and never fires.
                 <span
                   key={index}
                   className="onb-dot-progress"
                   data-playing={playing || undefined}
+                  data-paused={held || undefined}
                   style={{ animationDuration: `${AUTOPLAY_MS}ms` }}
-                  onAnimationEnd={() => paginate(1, false)}
+                  onAnimationEnd={playing ? advance : undefined}
                 />
               )}
             </span>
@@ -290,16 +320,26 @@ function Welcome(p: {
   );
 }
 
+const slideSpring = { type: 'spring', stiffness: 260, damping: 34, mass: 0.9 } as const;
+
+/** The element's width, kept current as it resizes. */
+function useWidth(ref: RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    setWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, [ref]);
+  return width;
+}
+
 /* ───────── Illustrations ───────── */
 
-const FLOAT = 5;
-const float = (i: number) => ({
-  y: [0, -FLOAT, 0],
-  transition: { duration: 3.4 + (i % 3) * 0.5, repeat: Infinity, ease: 'easeInOut' as const, delay: i * 0.35 },
-});
-
 // The outer ring's radius in styles.css (.art-ring.r2). The inner ring is 98px, so a face of up to
-// 48px here keeps a clear gap from it even at the bottom of its float.
+// 48px here keeps a clear gap from it even at the top of its drift.
 const ORBIT_R = 145;
 
 /** Three circles drift together into the Common mark while people and agents gather around it. */
@@ -317,23 +357,27 @@ function OrbitArt() {
     <div className="art art-orbit" aria-hidden="true">
       <motion.span className="art-ring" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.9, ease }} />
       <motion.span className="art-ring r2" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 1.1, ease, delay: 0.05 }} />
-      <motion.span className="art-mark" initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 18 }}>
+      <motion.span className="art-mark" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 22 }}>
         <AnimatedMark size={70} />
       </motion.span>
-      {spots.map((spot, i) => (
-        <motion.span
-          key={i}
-          className="art-face"
-          style={{ left: `calc(50% + ${(Math.cos((spot.a * Math.PI) / 180) * ORBIT_R).toFixed(1)}px)`, top: `calc(50% + ${(Math.sin((spot.a * Math.PI) / 180) * ORBIT_R).toFixed(1)}px)` }}
-          initial={{ scale: 0, opacity: 0, x: '-50%', y: '-50%' }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 380, damping: 18, delay: 0.45 + i * 0.09 }}
-        >
-          <motion.span animate={float(i)} style={{ display: 'block' }}>
-            {spot.agent ? <AgentAvatar agent={spot.agent} size={spot.s} /> : <Avatar person={CAST[spot.who ?? 0]} size={spot.s} />}
+      {spots.map((spot, i) => {
+        const rad = (spot.a * Math.PI) / 180;
+        return (
+          <motion.span
+            key={i}
+            className="art-face"
+            style={{ left: `calc(50% + ${(Math.cos(rad) * ORBIT_R).toFixed(1)}px)`, top: `calc(50% + ${(Math.sin(rad) * ORBIT_R).toFixed(1)}px)` }}
+            initial={{ scale: 0.6, opacity: 0, x: '-50%', y: '-50%' }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 240, damping: 24, delay: 0.4 + i * 0.07 }}
+          >
+            {/* A slow drift, each face out of phase with the next, so the group breathes rather than bobs. */}
+            <span className="art-drift" style={{ '--drift-for': `${5.4 + (i % 3) * 0.9}s`, '--drift-at': `${-i * 1.7}s` } as CSSProperties}>
+              {spot.agent ? <AgentAvatar agent={spot.agent} size={spot.s} /> : <Avatar person={CAST[spot.who ?? 0]} size={spot.s} />}
+            </span>
           </motion.span>
-        </motion.span>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -485,6 +529,8 @@ function EmailStep(p: { email: string; setEmail: (v: string) => void; busy: bool
           className="onb-input"
           type="email"
           inputMode="email"
+          enterKeyHint="send"
+          autoCapitalize="off"
           autoComplete="email"
           spellCheck={false}
           placeholder="you@example.com"
