@@ -49,6 +49,9 @@ export default function Preview() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [activities, setActivities] = useState<Activity[]>([{ id: 'created', actorName: 'Mayank', kind: 'space_created', createdAt: now - 86_400_000 }]);
   const [signedOut, setSignedOut] = useState(new URLSearchParams(location.search).get('screen') === 'login');
+  // Like the real app, sign-in options arrive a moment after the screen does.
+  const [authAvailable, setAuthAvailable] = useState<{ google: boolean; email: boolean } | null>(null);
+  useEffect(() => { const t = setTimeout(() => setAuthAvailable({ google: true, email: true }), 900); return () => clearTimeout(t); }, []);
   // The preview has no other people, so after you send, Tara "types" for a moment to show the indicator.
   const [typing, setTyping] = useState<TypingPerson[]>([]);
   const [emailStep, setEmailStep] = useState<'email' | 'code'>('email');
@@ -60,7 +63,7 @@ export default function Preview() {
   return <>
   <p className="preview-label" role="note">Design preview · sample data, nothing is saved</p>
   <CommonUI {...emptyProps} agents={agents} consent={consent} openAgents={screenParam === 'agents'} screen={loadingView || slowPhase === 'auth' ? 'loading' : signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={slowPhase === 'ready' ? spaces : []} isLoadingSpaces={slowPhase === 'spaces'} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities} typing={typing}
-    authAvailable={{ google: true, email: true }} emailStep={emailStep} emailAddress={emailAddress}
+    authAvailable={authAvailable} emailStep={emailStep} emailAddress={emailAddress}
     onGoogleSignIn={signIn}
     onEmailSignIn={async email => { await wait(600); setEmailAddress(email); setEmailStep('code'); }}
     onVerifyCode={async code => { if (code !== '123456') { await wait(500); throw new Error('That code didn’t work. In the preview, use 123456.'); } await signIn(); }}

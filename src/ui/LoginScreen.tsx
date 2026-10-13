@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { AnimatePresence, motion, useAnimationControls, useReducedMotion, type PanInfo } from 'motion/react';
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react';
+import { AnimatePresence, animate, motion, useAnimationControls, useMotionValue, useReducedMotion, type PanInfo } from 'motion/react';
 import { Check, ChevronLeft, Mail } from 'lucide-react';
 import type { CommonUIProps } from '../types';
 import { AnimatedMark, Avatar, InlineError, Spinner } from './primitives';
@@ -84,7 +84,6 @@ export function LoginScreen(p: Props) {
 
   const busy = p.authBusy || pending !== null;
   const shownError = localError ?? p.error;
-  const nothingAvailable = !p.authAvailable.google && !p.authAvailable.email;
 
   function go(next: Stage) {
     setLocalError(null);
@@ -135,7 +134,6 @@ export function LoginScreen(p: Props) {
               busy={busy}
               pending={pending}
               available={p.authAvailable}
-              nothingAvailable={nothingAvailable}
               notice={p.authNotice}
               error={shownError}
               onGoogle={() => void attempt('google', p.onGoogleSignIn)}
@@ -178,70 +176,106 @@ export function LoginScreen(p: Props) {
 function Welcome(p: {
   busy: boolean;
   pending: string | null;
-  available: { google: boolean; email: boolean };
-  nothingAvailable: boolean;
+  available: { google: boolean; email: boolean } | null;
   notice?: string;
   error: string | null;
   onGoogle: () => void;
   onEmail: () => void;
 }) {
-  const [[index, dir], setPage] = useState<[number, number]>([0, 1]);
-  const [autoplay, setAutoplay] = useState(true);
+  const [index, setIndex] = useState(0);
+  const [held, setHeld] = useState(false);
   const reduce = useReducedMotion();
   const slide = SLIDES[index];
   useAmbientTint(slide.tint);
 
-  const paginate = (step: number, manual = true) => {
-    if (manual) setAutoplay(false);
-    setPage(([i]) => [(i + step + SLIDES.length) % SLIDES.length, step]);
+  const pager = useRef<HTMLDivElement>(null);
+  const width = useWidth(pager);
+  const x = useMotionValue(0);
+  const fade = useMotionValue(1);
+  const wrapping = useRef(false);
+
+  // Slides sit side by side and the track springs to the current one. Wrapping from the last slide
+  // back to the first dissolves instead of rewinding past every slide in between.
+  useEffect(() => {
+    if (!width) return;
+    const to = -index * width;
+    if (reduce) {
+      x.set(to);
+      return;
+    }
+    if (wrapping.current) {
+      wrapping.current = false;
+      const out = animate(fade, 0, { duration: 0.22, ease: 'easeOut' });
+      void out.then(() => {
+        x.set(to);
+        void animate(fade, 1, { duration: 0.32, ease: 'easeOut' });
+      });
+      return () => out.stop();
+    }
+    const c = animate(x, to, slideSpring);
+    return () => c.stop();
+  }, [index, width, reduce, x, fade]);
+
+  const goTo = (i: number) => setIndex(Math.max(0, Math.min(SLIDES.length - 1, i)));
+  const advance = () => {
+    if (index === SLIDES.length - 1) wrapping.current = true;
+    setIndex((index + 1) % SLIDES.length);
   };
 
-  useEffect(() => {
-    if (!autoplay || reduce) return;
-    const t = setTimeout(() => paginate(1, false), AUTOPLAY_MS);
-    return () => clearTimeout(t);
-  }, [index, autoplay, reduce]);
-
   function onDragEnd(_: unknown, info: PanInfo) {
-    const swipe = info.offset.x + info.velocity.x * 0.2;
-    if (swipe < -60) paginate(1);
-    else if (swipe > 60) paginate(-1);
+    setHeld(false);
+    const threshold = width * 0.18;
+    if ((info.offset.x < -threshold || info.velocity.x < -450) && index < SLIDES.length - 1) goTo(index + 1);
+    else if ((info.offset.x > threshold || info.velocity.x > 450) && index > 0) goTo(index - 1);
+    else void animate(x, -index * width, slideSpring); // not far enough: settle back
   }
 
+  // Pressing anywhere on the slides pauses the timer (like a story), wherever the finger lifts.
+  function hold() {
+    setHeld(true);
+    const release = () => {
+      setHeld(false);
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+  }
+
+  const playing = !reduce;
   const t = tone(slide.tint);
   return (
     <div className="onb-welcome">
       <motion.div className="onb-glow" animate={{ background: `radial-gradient(120% 70% at 50% 0%, ${t.bg} 0%, ${t.bg}00 72%)` }} transition={{ duration: 0.8 }} />
 
-      <motion.div className="onb-carousel" drag="x" dragConstraints={{ left: 0, right: 0 }} dragElastic={0.18} onDragEnd={onDragEnd}>
-        {/* Unlike the stage around it, the first slide animates in, art and all. */}
-        <AnimatePresence custom={dir} mode="popLayout">
-          <motion.div
-            key={index}
-            className="onb-slide"
-            custom={dir}
-            variants={{
-              enter: (d: number) => ({ x: d > 0 ? 70 : -70, opacity: 0 }),
-              center: { x: 0, opacity: 1 },
-              exit: (d: number) => ({ x: d > 0 ? -70 : 70, opacity: 0 }),
-            }}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ x: { type: 'spring', stiffness: 300, damping: 34 }, opacity: { duration: 0.22 } }}
-          >
-            <div className="onb-art">
-              <slide.Art />
+      <div className="onb-pager" ref={pager} onPointerDown={hold}>
+        <motion.div
+          className="onb-track"
+          style={{ x, opacity: fade }}
+          drag={width ? 'x' : false}
+          dragConstraints={{ left: -(SLIDES.length - 1) * width, right: 0 }}
+          dragElastic={0.12}
+          dragMomentum={false}
+          onDragEnd={onDragEnd}
+        >
+          {SLIDES.map((s, i) => (
+            <div key={i} className="onb-slide" aria-hidden={i !== index || undefined} inert={i !== index || undefined}>
+              <div className="onb-art">
+                {/* Each illustration assembles as its slide arrives; it lingers while sliding away. */}
+                <AnimatePresence>
+                  {i === index && (
+                    <motion.div key="art" className="onb-art-play" exit={{ opacity: 0, transition: { delay: 0.5, duration: 0 } }}>
+                      <s.Art />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <h1 className="onb-title">{s.title}</h1>
+              <p className="onb-body">{s.body}</p>
             </div>
-            <motion.h1 className="onb-title" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08, duration: 0.4, ease }}>
-              {slide.title}
-            </motion.h1>
-            <motion.p className="onb-body" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14, duration: 0.4, ease }}>
-              {slide.body}
-            </motion.p>
-          </motion.div>
-        </AnimatePresence>
-      </motion.div>
+          ))}
+        </motion.div>
+      </div>
 
       <div className="onb-dots" role="tablist" aria-label="Introduction">
         {SLIDES.map((s, i) => (
@@ -252,16 +286,19 @@ function Welcome(p: {
             aria-selected={i === index}
             aria-label={`Slide ${i + 1} of ${SLIDES.length}`}
             className="onb-dot"
-            onClick={() => i !== index && paginate(i - index)}
+            onClick={() => goTo(i)}
           >
-            <span className="onb-dot-fill">
-              {i === index && autoplay && !reduce && (
-                <motion.span
+            <span className="onb-dot-track">
+              {i === index && (
+                // The fill is the timer: the slide advances when it completes, so the two can't drift.
+                // Without autoplay it simply rests full and never fires.
+                <span
                   key={index}
                   className="onb-dot-progress"
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: 1 }}
-                  transition={{ duration: AUTOPLAY_MS / 1000, ease: 'linear' }}
+                  data-playing={playing || undefined}
+                  data-paused={held || undefined}
+                  style={{ animationDuration: `${AUTOPLAY_MS}ms` }}
+                  onAnimationEnd={playing ? advance : undefined}
                 />
               )}
             </span>
@@ -271,68 +308,79 @@ function Welcome(p: {
 
       <motion.div className="onb-cta" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.45, ease }}>
         {p.notice && <p className="onb-notice" role="status">{p.notice}</p>}
-        {p.available.google && (
-          <button type="button" className="btn btn-primary btn-block btn-xl" disabled={p.busy} onClick={p.onGoogle}>
-            {p.pending === 'google' ? <Spinner size={16} /> : <GoogleG />}
-            Continue with Google
-          </button>
-        )}
-        {(p.available.email || p.nothingAvailable) && (
-          <button
-            type="button"
-            className={`btn btn-block btn-xl ${p.available.google ? 'btn-soft' : 'btn-primary'}`}
-            disabled={p.busy || !p.available.email}
-            onClick={p.onEmail}
-          >
-            <Mail size={17} aria-hidden="true" />
-            Continue with email
-          </button>
-        )}
-        {p.nothingAvailable && <p className="field-note warn">Sign-in isn’t configured for this deployment yet.</p>}
+        {/* Both options are always laid out; each switches on once the deployment confirms it, so nothing jumps. */}
+        <button type="button" className="btn btn-primary btn-block btn-xl" disabled={p.busy || !p.available?.google} aria-busy={!p.available || undefined} onClick={p.onGoogle}>
+          {p.pending === 'google' ? <Spinner size={16} /> : <GoogleG />}
+          Continue with Google
+        </button>
+        <button type="button" className="btn btn-soft btn-block btn-xl" disabled={p.busy || !p.available?.email} aria-busy={!p.available || undefined} onClick={p.onEmail}>
+          <Mail size={17} aria-hidden="true" />
+          Continue with email
+        </button>
         <AnimatePresence>{p.error && <InlineError key={p.error}>{p.error}</InlineError>}</AnimatePresence>
       </motion.div>
     </div>
   );
 }
 
+const slideSpring = { type: 'spring', stiffness: 260, damping: 34, mass: 0.9 } as const;
+
+/** The element's width, kept current as it resizes. */
+function useWidth(ref: RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    setWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, [ref]);
+  return width;
+}
+
 /* ───────── Illustrations ───────── */
 
-const float = (i: number) => ({
-  y: [0, -6 - (i % 3) * 2, 0],
-  transition: { duration: 3.2 + i * 0.45, repeat: Infinity, ease: 'easeInOut' as const, delay: i * 0.2 },
-});
+// The outer ring's radius in styles.css (.art-ring.r2). The inner ring is 98px, so a face of up to
+// 48px here keeps a clear gap from it even at the top of its drift.
+const ORBIT_R = 145;
 
 /** Three circles drift together into the Common mark while people and agents gather around it. */
 function OrbitArt() {
-  const spots: { x: number; y: number; s: number; agent?: Agent['id']; who?: number }[] = [
-    { x: -106, y: -50, s: 50, who: 0 },
-    { x: 100, y: -66, s: 46, agent: 'claude' },
-    { x: 120, y: 42, s: 50, who: 1 },
-    { x: -118, y: 60, s: 44, agent: 'chatgpt' },
-    { x: 4, y: 104, s: 40, who: 3 },
-    { x: -14, y: -112, s: 34, who: 4 },
+  // Faces sit on the outer ring at fixed angles (0° is right, clockwise).
+  const spots: { a: number; s: number; agent?: Agent['id']; who?: number }[] = [
+    { a: -90, s: 36, who: 4 },
+    { a: -34, s: 44, agent: 'claude' },
+    { a: 22, s: 48, who: 1 },
+    { a: 92, s: 40, who: 3 },
+    { a: 152, s: 44, agent: 'chatgpt' },
+    { a: 208, s: 48, who: 0 },
   ];
   return (
     <div className="art art-orbit" aria-hidden="true">
       <motion.span className="art-ring" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.9, ease }} />
       <motion.span className="art-ring r2" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 1.1, ease, delay: 0.05 }} />
-      <motion.span className="art-mark" initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 18 }}>
+      <motion.span className="art-mark" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 22 }}>
         <AnimatedMark size={70} />
       </motion.span>
-      {spots.map((spot, i) => (
-        <motion.span
-          key={i}
-          className="art-face"
-          style={{ left: `calc(50% + ${spot.x}px)`, top: `calc(50% + ${spot.y}px)` }}
-          initial={{ scale: 0, opacity: 0, x: '-50%', y: '-50%' }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 380, damping: 18, delay: 0.45 + i * 0.09 }}
-        >
-          <motion.span animate={float(i)} style={{ display: 'block' }}>
-            {spot.agent ? <AgentAvatar agent={spot.agent} size={spot.s} /> : <Avatar person={CAST[spot.who ?? 0]} size={spot.s} />}
+      {spots.map((spot, i) => {
+        const rad = (spot.a * Math.PI) / 180;
+        return (
+          <motion.span
+            key={i}
+            className="art-face"
+            style={{ left: `calc(50% + ${(Math.cos(rad) * ORBIT_R).toFixed(1)}px)`, top: `calc(50% + ${(Math.sin(rad) * ORBIT_R).toFixed(1)}px)` }}
+            initial={{ scale: 0.6, opacity: 0, x: '-50%', y: '-50%' }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 240, damping: 24, delay: 0.4 + i * 0.07 }}
+          >
+            {/* A slow drift, each face out of phase with the next, so the group breathes rather than bobs. */}
+            <span className="art-drift" style={{ '--drift-for': `${5.4 + (i % 3) * 0.9}s`, '--drift-at': `${-i * 1.7}s` } as CSSProperties}>
+              {spot.agent ? <AgentAvatar agent={spot.agent} size={spot.s} /> : <Avatar person={CAST[spot.who ?? 0]} size={spot.s} />}
+            </span>
           </motion.span>
-        </motion.span>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -376,10 +424,10 @@ function UpdatesArt() {
           <Avatar person={CAST[0]} size={26} />
           <span className="art-name">{CAST[0].name}</span>
         </span>
-        <span className="art-bubble art-typing" style={{ background: tone(CAST[0].color).bg }}>
-          {[0, 1, 2].map((d) => (
-            <motion.i key={d} animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.9, repeat: Infinity, delay: d * 0.15 }} />
-          ))}
+        <span className="art-bubble art-typing typing-dots" style={{ background: tone(CAST[0].color).bg, color: tone(CAST[0].color).ink }}>
+          <i />
+          <i />
+          <i />
         </span>
       </motion.div>
     </div>
@@ -484,6 +532,8 @@ function EmailStep(p: { email: string; setEmail: (v: string) => void; busy: bool
           className="onb-input"
           type="email"
           inputMode="email"
+          enterKeyHint="send"
+          autoCapitalize="off"
           autoComplete="email"
           spellCheck={false}
           placeholder="you@example.com"
