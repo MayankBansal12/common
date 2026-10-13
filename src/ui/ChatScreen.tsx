@@ -460,7 +460,7 @@ function useActiveTypers(typing: TypingPerson[]) {
   return typing.filter((t) => t.expiresAt > now);
 }
 
-/** The "…" bubble from onboarding, for whoever is composing: avatar, first name, bouncing dots. */
+/** The "…" bubble from onboarding, for whoever is composing: avatar, first name, softly pulsing dots. */
 function TypingRow({ people }: { people: TypingPerson[] }) {
   const lead = people[0];
   const names = people.map((p) => firstName(p.name));
@@ -483,9 +483,9 @@ function TypingRow({ people }: { people: TypingPerson[] }) {
         <span className="msg-name">{people.length > 1 ? `${names[0]} +${people.length - 1}` : names[0]}</span>
       </span>
       <div className="bubble tail typing-dots" style={{ '--b-bg': tone(lead.color).bg, '--b-ink': tone(lead.color).ink } as CSSProperties} aria-hidden="true">
-        {[0, 1, 2].map((d) => (
-          <motion.i key={d} animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.9, repeat: Infinity, delay: d * 0.15 }} />
-        ))}
+        <i />
+        <i />
+        <i />
       </div>
     </motion.div>
   );

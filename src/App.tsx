@@ -52,7 +52,7 @@ export default function App() {
     try { await fn(); } catch { setError('Couldn’t sign in. Check your details and try again.'); } finally { setAuthBusy(false); }
   };
   const authProps = {
-    emailStep, emailAddress, authBusy, authAvailable: authOptions ?? { google: false, email: false },
+    emailStep, emailAddress, authBusy, authAvailable: authOptions ?? null,
     onGoogleSignIn: () => performAuth(() => authActions.signIn('google', { redirectTo: '/' })),
     onEmailSignIn: (address: string) => performAuth(async () => {
       const normalized = address.trim().toLowerCase();
@@ -70,7 +70,7 @@ export default function App() {
 const noop = async () => {};
 export const emptyProps: CommonUIProps = {
   screen: 'loading', user: null, spaces: [], activeSpace: null, messages: [], members: [], invitations: [], pendingInvitations: [], activities: [], typing: [], isOnline: true, isLoadingMessages: false, hasMoreMessages: false, error: null,
-  emailStep: 'email', emailAddress: '', authBusy: false, authAvailable: { google: false, email: false }, onGoogleSignIn: noop, onEmailSignIn: noop, onVerifyCode: noop, onBackToEmail() {}, onSignOut: noop, onCreateSpace: async () => '', onUpdateSpace: noop, onSelectSpace() {}, onSendMessage: noop, onTyping() {}, onRetryMessage() {}, onLoadMoreMessages() {}, onInviteMember: noop, onRemoveMember: noop, onRevokeInvite: noop, onAcceptInvitation: noop, onUpdateProfile: noop, onDismissError() {},
+  emailStep: 'email', emailAddress: '', authBusy: false, authAvailable: null, onGoogleSignIn: noop, onEmailSignIn: noop, onVerifyCode: noop, onBackToEmail() {}, onSignOut: noop, onCreateSpace: async () => '', onUpdateSpace: noop, onSelectSpace() {}, onSendMessage: noop, onTyping() {}, onRetryMessage() {}, onLoadMoreMessages() {}, onInviteMember: noop, onRemoveMember: noop, onRevokeInvite: noop, onAcceptInvitation: noop, onUpdateProfile: noop, onDismissError() {},
 };
 type AuthProps = Pick<CommonUIProps, 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onSignOut'>;
 
