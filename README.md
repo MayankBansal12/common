@@ -22,6 +22,12 @@ npm run backend
 
 The backend CLI writes `.env.local`; generated Convex APIs are checked in. Local environment and signing-key files are ignored by Git.
 
+## Web analytics
+
+Vercel Web Analytics is mounted once in `src/main.tsx` using `@vercel/analytics/react`. Its mode follows Vite's production flag, so local development does not send analytics data.
+
+Enable Web Analytics in the Vercel project's Analytics tab, then deploy this change to collect visitors and page views. See [Vercel's setup guide](https://vercel.com/docs/analytics/quickstart).
+
 ## Finish authentication setup
 
 Populate `.env.auth` using BB's secure credential form with `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_RESEND_KEY`, and `AUTH_EMAIL`. The initial request returned a plugin error and no credentials were saved. The sender must be verified in Resend. Then upload without printing values:
