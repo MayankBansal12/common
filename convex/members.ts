@@ -1,7 +1,8 @@
-import { mutation, query } from './_generated/server';
+import { mutation, query, type MutationCtx } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { ConvexError, v } from 'convex/values';
-import { hashColor, maskEmail, normalizeEmail, person, rateLimit, requireMember, requireOwner, requireUser } from './lib/access';
+import { hashColor, maskEmail, normalizeEmail, person, rateLimit, requireMember, requireOwner, requireUser, type Actor } from './lib/access';
 import { emailConfigured } from './lib/email';
 export const list = query({ args: { spaceId: v.id('spaces') }, handler: async (ctx, { spaceId }) => {
   await requireMember(ctx, spaceId);
@@ -28,6 +29,9 @@ export const pending = query({ args: {}, handler: async ctx => {
 }});
 export const invite = mutation({ args: { spaceId: v.id('spaces'), email: v.string() }, handler: async (ctx, { spaceId, email }) => {
   const { user } = await requireMember(ctx, spaceId);
+  return inviteMember(ctx, { user }, spaceId, email);
+}});
+export async function inviteMember(ctx: MutationCtx, { user, agent }: Actor, spaceId: Id<'spaces'>, email: string) {
   const address = normalizeEmail(email);
   const space = await ctx.db.get(spaceId);
   if (!space || space.memberCount >= 100) throw new ConvexError('This space has reached its member limit.');
@@ -43,10 +47,10 @@ export const invite = mutation({ args: { spaceId: v.id('spaces'), email: v.strin
   await rateLimit(ctx, `invite:${user._id}`, 20, 3_600_000);
   if (old) await ctx.db.delete(old._id);
   const invitationId = await ctx.db.insert('invitations', { spaceId, email: address, inviterId: user._id, expiresAt: Date.now() + 7 * 86_400_000 });
-  await ctx.db.insert('activities', { spaceId, actorId: user._id, kind: 'member_invited', subject: address });
+  await ctx.db.insert('activities', { spaceId, actorId: user._id, kind: 'member_invited', subject: address, agentName: agent?.name });
   if (emailConfigured()) await ctx.scheduler.runAfter(0, internal.notifications.invitation, { invitationId, attempt: 0 });
   return invitationId;
-}});
+}
 export const accept = mutation({ args: { invitationId: v.id('invitations') }, handler: async (ctx, { invitationId }) => {
   const user = await requireUser(ctx);
   const invite = await ctx.db.get(invitationId);
@@ -70,20 +74,32 @@ export const revoke = mutation({ args: { invitationId: v.id('invitations') }, ha
   const invite = await ctx.db.get(invitationId);
   if (!invite) throw new ConvexError('Invitation not found.');
   const { user, membership } = await requireMember(ctx, invite.spaceId);
-  if (membership.role !== 'owner' && user._id !== invite.inviterId) throw new ConvexError('Only the inviter or space owner can revoke this invitation.');
-  await ctx.db.delete(invitationId);
-  await ctx.db.insert('activities', { spaceId: invite.spaceId, actorId: user._id, kind: 'invite_revoked', subject: invite.email });
+  await revokeInvitation(ctx, { user }, membership, invite);
 }});
+export async function revokeInvitation(ctx: MutationCtx, { user, agent }: Actor, membership: Doc<'memberships'>, invite: Doc<'invitations'>) {
+  if (membership.role !== 'owner' && user._id !== invite.inviterId) throw new ConvexError('Only the inviter or space owner can revoke this invitation.');
+  await ctx.db.delete(invite._id);
+  await ctx.db.insert('activities', { spaceId: invite.spaceId, actorId: user._id, kind: 'invite_revoked', subject: invite.email, agentName: agent?.name });
+}
 export const remove = mutation({ args: { spaceId: v.id('spaces'), userId: v.id('users') }, handler: async (ctx, { spaceId, userId }) => {
-  const { user } = await requireOwner(ctx, spaceId);
+  const { user, membership } = await requireOwner(ctx, spaceId);
+  await removeMember(ctx, { user }, membership, userId);
+}});
+/** Owner only. The removed person's agents lose the space too, so re-inviting them never quietly restores agent access. */
+export async function removeMember(ctx: MutationCtx, { user, agent }: Actor, membership: Doc<'memberships'>, userId: Id<'users'>) {
+  const spaceId = membership.spaceId;
+  if (membership.role !== 'owner') throw new ConvexError('Only the space owner can do this.');
   if (userId === user._id) throw new ConvexError('The owner cannot be removed.');
   const target = await ctx.db.query('memberships').withIndex('by_space_user', q => q.eq('spaceId', spaceId).eq('userId', userId)).unique();
   if (!target) return;
   const space = await ctx.db.get(spaceId);
   await ctx.db.delete(target._id);
   if (space) await ctx.db.patch(spaceId, { memberCount: Math.max(1, space.memberCount - 1) });
-  await ctx.db.insert('activities', { spaceId, actorId: user._id, kind: 'member_removed', subject: (await person(ctx, userId)).name });
-}});
+  for (const connection of await ctx.db.query('agentConnections').withIndex('by_user', q => q.eq('userId', userId)).collect()) {
+    if (connection.spaceIds.includes(spaceId)) await ctx.db.patch(connection._id, { spaceIds: connection.spaceIds.filter(id => id !== spaceId) });
+  }
+  await ctx.db.insert('activities', { spaceId, actorId: user._id, kind: 'member_removed', subject: (await person(ctx, userId)).name, agentName: agent?.name });
+}
 export const activity = query({ args: { spaceId: v.id('spaces') }, handler: async (ctx, { spaceId }) => {
   await requireMember(ctx, spaceId);
   const events = await ctx.db.query('activities').withIndex('by_space', q => q.eq('spaceId', spaceId)).order('desc').take(50);
@@ -100,5 +116,5 @@ export const activity = query({ args: { spaceId: v.id('spaces') }, handler: asyn
     const email = e.subject.trim().toLowerCase();
     return nameByEmail.get(email) ?? maskEmail(email);
   };
-  return Promise.all(events.map(async e => ({ id: e._id, kind: e.kind, actorName: (await person(ctx, e.actorId)).name, subject: subjectFor(e), createdAt: e._creationTime })));
+  return Promise.all(events.map(async e => ({ id: e._id, kind: e.kind, actorName: (await person(ctx, e.actorId)).name, agentName: e.agentName, subject: subjectFor(e), createdAt: e._creationTime })));
 }});

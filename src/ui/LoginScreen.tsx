@@ -10,7 +10,7 @@ import { errorText, isEmail } from './format';
 
 type Props = Pick<
   CommonUIProps,
-  'error' | 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onDismissError'
+  'error' | 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onDismissError' | 'authNotice'
 >;
 
 const CODE_LENGTH = 6;
@@ -136,6 +136,7 @@ export function LoginScreen(p: Props) {
               pending={pending}
               available={p.authAvailable}
               nothingAvailable={nothingAvailable}
+              notice={p.authNotice}
               error={shownError}
               onGoogle={() => void attempt('google', p.onGoogleSignIn)}
               onEmail={() => go('email')}
@@ -179,6 +180,7 @@ function Welcome(p: {
   pending: string | null;
   available: { google: boolean; email: boolean };
   nothingAvailable: boolean;
+  notice?: string;
   error: string | null;
   onGoogle: () => void;
   onEmail: () => void;
@@ -268,6 +270,7 @@ function Welcome(p: {
       </div>
 
       <motion.div className="onb-cta" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.45, ease }}>
+        {p.notice && <p className="onb-notice" role="status">{p.notice}</p>}
         {p.available.google && (
           <button type="button" className="btn btn-primary btn-block btn-xl" disabled={p.busy} onClick={p.onGoogle}>
             {p.pending === 'google' ? <Spinner size={16} /> : <GoogleG />}

@@ -2,9 +2,11 @@ import { useMemo, useRef, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { motion } from 'motion/react';
 import { Check, LogOut, PenLine, Plus, Users } from 'lucide-react';
-import type { PendingInvitation, Person, ProfileInput, Space, SpaceInput } from '../types';
+import type { AgentProps, PendingInvitation, Person, ProfileInput, Space, SpaceInput } from '../types';
 import { AnimatedMark, Avatar, BrandMark, SpaceBadge, Spinner } from './primitives';
 import { ProfileSheet, SpaceSheet } from './SpaceDialogs';
+import { AgentsSheet } from './AgentsSheet';
+import { AgentGlyph } from './agents';
 import { useScreenContainer } from './Device';
 import { plainText } from './markdown';
 import { errorText, shortStamp } from './format';
@@ -21,6 +23,9 @@ type Props = {
   onAcceptInvitation: (id: string) => Promise<void>;
   onUpdateProfile: (input: ProfileInput) => Promise<void>;
   onSignOut: () => Promise<void>;
+  agents?: AgentProps;
+  /** Preview only: start with the Connected agents sheet open. */
+  openAgents?: boolean;
 };
 
 export function SpacesScreen(p: Props) {
@@ -29,6 +34,9 @@ export function SpacesScreen(p: Props) {
   // A newly created space opens only after its sheet has finished sliding away.
   const created = useRef<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [agentsOpen, setAgentsOpen] = useState(!!p.openAgents);
+  // The menu item that opens the sheet unmounts with the menu, so focus returns to the account button.
+  const accountButton = useRef<HTMLButtonElement>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [accepting, setAccepting] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
@@ -73,7 +81,7 @@ export function SpacesScreen(p: Props) {
         <div className="bar-actions">
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <button type="button" className="avatar-btn" aria-label="Account" title="Account">
+              <button ref={accountButton} type="button" className="avatar-btn" aria-label="Account" title="Account">
                 {signingOut ? <Spinner size={16} /> : <Avatar person={p.user} size={26} />}
               </button>
             </DropdownMenu.Trigger>
@@ -88,6 +96,12 @@ export function SpacesScreen(p: Props) {
                   <PenLine size={14} aria-hidden="true" />
                   Edit profile
                 </DropdownMenu.Item>
+                {p.agents && (
+                  <DropdownMenu.Item className="menu-item" onSelect={() => setAgentsOpen(true)}>
+                    <AgentGlyph size={14} />
+                    Connected agents
+                  </DropdownMenu.Item>
+                )}
                 <DropdownMenu.Item className="menu-item" disabled={signingOut} onSelect={() => void signOut()}>
                   <LogOut size={14} aria-hidden="true" />
                   Sign out
@@ -199,6 +213,7 @@ export function SpacesScreen(p: Props) {
         }}
       />
       <ProfileSheet open={profileOpen} onOpenChange={setProfileOpen} user={p.user} onSave={p.onUpdateProfile} />
+      {p.agents && <AgentsSheet open={agentsOpen} onOpenChange={setAgentsOpen} spaces={p.spaces} agents={p.agents} returnFocus={accountButton} />}
     </div>
   );
 }

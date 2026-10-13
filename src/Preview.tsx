@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import CommonUI from './ui/CommonUI';
 import { emptyProps } from './App';
-import type { Activity, Invitation, Message, Person, Space, TypingPerson } from './types';
+import type { Activity, AgentConnection, AgentProps, ConsentProps, Invitation, Message, Person, Space, TypingPerson } from './types';
 
 // In the preview, photos never leave the browser: undefined keeps, null removes, a Blob becomes an object URL.
 const photo = (image: Blob | null | undefined, current?: string) => (image === undefined ? current : image ? URL.createObjectURL(image) : undefined);
@@ -26,6 +26,7 @@ const fixtures = [
   ['mayank', 'Let’s start with just us. A space, a few people, and a conversation. Notes are at getbb.app/docs', -10],
   ['dev', '> Keeping things simple\nThat’s enough to start something.', -8],
 ] as const;
+const screenParam = new URLSearchParams(location.search).get('screen');
 export default function Preview() {
   const [user, setUser] = useState(people[0]);
   const [members, setMembers] = useState(people);
@@ -41,8 +42,10 @@ export default function Preview() {
   // `&screen=new` starts like a brand-new account: no spaces yet.
   const fresh = new URLSearchParams(location.search).get('screen') === 'new';
   const [spaces, setSpaces] = useState<Space[]>(fresh ? [] : [{ id: 'studio', name: 'The studio', symbol: '✳', color: 0, memberCount: 3, unread: 0, updatedAt: now, lastMessage: 'That’s enough to start something.' }, { id: 'weekend', name: 'Weekend things', symbol: '☀', color: 3, memberCount: 1, unread: 0, updatedAt: now - 86_400_000 }]);
-  const [selected, setSelected] = useState<string | null>(['spaces', 'new', 'slow'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? null : 'studio');
-  const [messageMap, setMessageMap] = useState<Record<string, Message[]>>({ studio: fixtures.map(([id, body, minutes], i) => ({ id: `example-${i}`, clientId: `example-${i}`, body, sender: people.find(p => p.id === id)!, createdAt: now + minutes * 60_000, status: 'sent' })) });
+  const [selected, setSelected] = useState<string | null>(['spaces', 'new', 'slow', 'agents', 'consent', 'consent-expired'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? null : 'studio');
+  const [messageMap, setMessageMap] = useState<Record<string, Message[]>>({ studio: [...fixtures.map(([id, body, minutes], i) => ({ id: `example-${i}`, clientId: `example-${i}`, body, sender: people.find(p => p.id === id)!, createdAt: now + minutes * 60_000, status: 'sent' as const })), ...agentFixtures] });
+  const agents = usePreviewAgents();
+  const consent = usePreviewConsent();
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [activities, setActivities] = useState<Activity[]>([{ id: 'created', actorName: 'Mayank', kind: 'space_created', createdAt: now - 86_400_000 }]);
   const [signedOut, setSignedOut] = useState(new URLSearchParams(location.search).get('screen') === 'login');
@@ -54,7 +57,9 @@ export default function Preview() {
   const signIn = async () => { await wait(700); setSignedOut(false); setEmailStep('email'); };
   // Messages carry a snapshot of their sender; show the latest profile like the live app does.
   const messages = (selected ? messageMap[selected] ?? [] : []).map(m => ({ ...m, sender: members.find(p => p.id === m.sender.id) ?? m.sender }));
-  return <CommonUI {...emptyProps} screen={loadingView || slowPhase === 'auth' ? 'loading' : signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={slowPhase === 'ready' ? spaces : []} isLoadingSpaces={slowPhase === 'spaces'} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities} typing={typing}
+  return <>
+  <p className="preview-label" role="note">Design preview · sample data, nothing is saved</p>
+  <CommonUI {...emptyProps} agents={agents} consent={consent} openAgents={screenParam === 'agents'} screen={loadingView || slowPhase === 'auth' ? 'loading' : signedOut ? 'login' : space ? 'chat' : 'spaces'} user={signedOut ? null : user} spaces={slowPhase === 'ready' ? spaces : []} isLoadingSpaces={slowPhase === 'spaces'} activeSpace={space} messages={messages} members={members} invitations={invitations} activities={activities} typing={typing}
     authAvailable={{ google: true, email: true }} emailStep={emailStep} emailAddress={emailAddress}
     onGoogleSignIn={signIn}
     onEmailSignIn={async email => { await wait(600); setEmailAddress(email); setEmailStep('code'); }}
@@ -68,5 +73,48 @@ export default function Preview() {
     onRevokeInvite={async id => setInvitations(i => i.filter(x => x.id !== id))}
     onRemoveMember={async id => setMembers(m => m.filter(x => x.id !== id))}
     onUpdateProfile={async ({ name, image, avatarSeed = user.avatarSeed }) => { await wait(350); const imageUrl = photo(image, user.imageUrl); setUser(u => ({ ...u, name, imageUrl, avatarSeed })); setMembers(m => m.map(p => p.id === user.id ? { ...p, name, imageUrl, avatarSeed } : p)); }}
-  />;
+  />
+  </>;
+}
+
+// Agents in the preview: Dev's agent posts in the thread; connections and consent are local mock-ups.
+const agentFixtures: Message[] = [
+  { id: 'agent-1', clientId: 'agent-1', body: 'Morning! I collected the notes from Saturday into a checklist on the board.', sender: people[2], agent: { id: 'claude', name: 'Claude' }, createdAt: now - 7 * 60_000, status: 'sent' },
+  { id: 'agent-2', clientId: 'agent-2', body: 'Three items are still open. Want me to post a reminder on Friday?', sender: people[2], agent: { id: 'claude', name: 'Claude' }, createdAt: now - 7 * 60_000 + 20_000, status: 'sent' },
+  // Your own agent: shown on the left as the agent, grouped apart from your own message just before it.
+  { id: 'own-human', clientId: 'own-human', body: 'Can someone pull together this week’s open items?', sender: people[0], createdAt: now - 5 * 60_000, status: 'sent' },
+  { id: 'own-agent', clientId: 'own-agent', body: 'On it. Three are open: onboarding copy, photo cropping and the empty-space screen.', sender: people[0], agent: { id: 'mayank-helper', name: 'Helper' }, createdAt: now - 5 * 60_000 + 15_000, status: 'sent' },
+];
+const sampleSpaces = [{ id: 'studio', name: 'The studio' }, { id: 'weekend', name: 'Weekend things' }];
+function usePreviewAgents(): AgentProps {
+  const [connections, setConnections] = useState<AgentConnection[] | undefined>(undefined);
+  useEffect(() => {
+    const t = setTimeout(() => setConnections([
+      { id: 'c1', name: 'Coding agent', kind: 'oauth', clientName: 'Sample MCP client', redirectHost: '127.0.0.1:33418', scopes: ['messages:read', 'messages:send'], requestedScopes: ['messages:read', 'messages:send', 'spaces:manage', 'profile:write'], spaceMode: 'selected', spaces: [sampleSpaces[0]], createdAt: now - 3 * 86_400_000, lastUsedAt: now - 2 * 3_600_000, expired: false },
+      // Created but never used: awaiting connection, not connected.
+      { id: 'c2', name: 'Build bot', kind: 'token', scopes: ['messages:send'], requestedScopes: null, spaceMode: 'all', spaces: [], createdAt: now - 20 * 86_400_000, expiresAt: now + 70 * 86_400_000, expired: false },
+      { id: 'c3', name: 'Old script', kind: 'token', scopes: ['messages:read'], requestedScopes: null, spaceMode: 'all', spaces: [], createdAt: now - 120 * 86_400_000, lastUsedAt: now - 95 * 86_400_000, expiresAt: now - 30 * 86_400_000, expired: true },
+    ]), 700);
+    return () => clearTimeout(t);
+  }, []);
+  return {
+    connections,
+    // `&mcp=none` shows the state for a build that doesn't know its server address.
+    mcpUrl: new URLSearchParams(location.search).get('mcp') === 'none' ? null : 'https://your-deployment.convex.site/mcp',
+    sampleNote: 'Preview: these connections are samples. Nothing here connects a real agent.',
+    onUpdate: async (id, g) => { await wait(400); setConnections(cs => cs?.map(c => c.id === id ? { ...c, name: g.name, scopes: g.scopes, spaceMode: g.spaceMode, spaces: sampleSpaces.filter(s => g.spaceIds.includes(s.id)) } : c)); },
+    onRevoke: async id => { await wait(400); setConnections(cs => cs?.filter(c => c.id !== id)); },
+    onCreateToken: async g => { await wait(500); setConnections(cs => [{ id: crypto.randomUUID(), name: g.name, kind: 'token', scopes: g.scopes, requestedScopes: null, spaceMode: g.spaceMode, spaces: sampleSpaces.filter(s => g.spaceIds.includes(s.id)), createdAt: Date.now(), expiresAt: g.expiresInDays ? Date.now() + g.expiresInDays * 86_400_000 : undefined, expired: false }, ...(cs ?? [])]); return 'cmn_pat_PREVIEW-sample-token-not-valid-anywhere'; },
+  };
+}
+/** `&screen=consent` shows the agent sign-in screen; `&screen=consent-expired` its expired state. */
+function usePreviewConsent(): ConsentProps | undefined {
+  const [open, setOpen] = useState(screenParam === 'consent' || screenParam === 'consent-expired');
+  if (!open) return undefined;
+  return {
+    request: screenParam === 'consent-expired' ? { status: 'expired' } : { status: 'ready', clientName: 'Sample MCP client', redirectHost: '127.0.0.1:33418', requestedScopes: ['messages:read', 'messages:send', 'spaces:manage', 'profile:write'] },
+    onApprove: async () => { await wait(600); setTimeout(() => setOpen(false), 1400); },
+    onDeny: async () => { await wait(300); setTimeout(() => setOpen(false), 1400); },
+    onDismiss: () => setOpen(false),
+  };
 }

@@ -1562,22 +1562,24 @@ fieldset {
 }
 
 .member-stack {
+  --member-ring: var(--panel);
   justify-self: end;
   display: flex;
   align-items: center;
-  padding: 4px 6px 4px 10px;
+  justify-content: center;
+  padding: 6px;
   border-radius: 999px;
   transition: background-color 0.12s;
 }
 .member-stack:hover {
-  background: var(--hover);
+  --member-ring: color-mix(in srgb, var(--ink) 4.5%, var(--panel));
+  background: var(--member-ring);
 }
 .member-stack .stacked {
-  margin-left: -7px;
-  box-shadow: 0 0 0 2px var(--panel);
+  box-shadow: 0 0 0 2px var(--member-ring);
 }
-.member-stack:hover .stacked {
-  box-shadow: 0 0 0 2px #f4f4f1;
+.member-stack .stacked + .stacked {
+  margin-left: -7px;
 }
 .stack-more {
   margin-left: 5px;
@@ -2779,6 +2781,15 @@ ol.md-list {
   color: var(--ink-3);
   transition: color 0.15s, transform 0.16s var(--spring);
 }
+.seat-agents .seat-ring {
+  transition: transform 0.16s var(--spring);
+}
+.seat-agents:not(:disabled):hover .seat-label {
+  color: var(--ink);
+}
+.seat-agents:not(:disabled):active .seat-ring {
+  transform: scale(0.95);
+}
 button.seat-empty:hover {
   color: var(--ink);
 }
@@ -2868,4 +2879,749 @@ button.seat-empty:active {
 }
 .avatar-opt[aria-checked='true'] {
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink);
+}
+
+/* ───────── Agents: connecting, permissions, consent, attribution ───────── */
+
+.agents-sheet {
+  height: min(620px, calc(100dvh - 48px));
+}
+.stack.tight {
+  gap: 10px;
+  overflow: hidden;
+  /* Room for button outlines and focus rings, which the height animation would otherwise clip. */
+  margin: -3px;
+  padding: 3px;
+}
+.copy-field {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.copy-field .input {
+  flex: 1;
+  min-width: 0;
+}
+.copy-field .btn {
+  flex: none;
+}
+.input.mono,
+.code-block {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.code-block {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--hover);
+  color: var(--ink-2);
+  white-space: pre;
+  overflow-x: auto;
+}
+.code-wrap {
+  position: relative;
+}
+.code-copy {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+/* Copy buttons: both labels share one grid cell, so the button keeps the wider one's width. */
+.copy-label {
+  display: inline-grid;
+  justify-items: center;
+}
+.copy-label > span {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.18s ease, transform 0.26s var(--spring), filter 0.18s ease;
+}
+.copy-label-done {
+  opacity: 0;
+  transform: translateY(5px);
+  filter: blur(2px);
+}
+.copy-label[data-copied] .copy-label-idle {
+  opacity: 0;
+  transform: translateY(-5px);
+  filter: blur(2px);
+}
+.copy-label[data-copied] .copy-label-done {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+.copy-label[data-copied] .copy-label-check {
+  animation: copy-check 0.34s var(--spring);
+}
+@keyframes copy-check {
+  from {
+    transform: scale(0.4) rotate(-12deg);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .copy-label > span {
+    transition: opacity 0.12s;
+    transform: none !important;
+    filter: none !important;
+  }
+  .copy-label[data-copied] .copy-label-check {
+    animation: none;
+  }
+}
+
+.connect-title {
+  font-size: 13.5px;
+  font-weight: 620;
+}
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ink-2);
+}
+.steps li {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+}
+.step-n {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 650;
+  translate: 0 -1px;
+}
+.disclose {
+  align-self: flex-start;
+}
+.disclose-icon {
+  transition: rotate 0.15s;
+}
+.disclose[aria-expanded='true'] .disclose-icon {
+  rotate: 90deg;
+}
+.loading-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-row {
+  width: 100%;
+  text-align: left;
+  border-radius: 10px;
+  transition: background-color 0.12s;
+}
+.agent-row:hover {
+  background: var(--hover);
+}
+li + li > .agent-row {
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.role-chip.warn {
+  color: #8a5a12;
+  box-shadow: inset 0 0 0 1px #ecd7a8;
+}
+.agent-meta {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+/* Permission and space choices: whole rows are the hit target. */
+.grant-group {
+  display: flex;
+  flex-direction: column;
+}
+.perm-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.perm-row {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.perm-row + .perm-row {
+  border-top: 1px solid var(--line);
+}
+.perm-row.is-fixed {
+  cursor: default;
+}
+.perm-row[data-off] {
+  cursor: default;
+  opacity: 0.55;
+}
+.perm-input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: inherit;
+}
+.perm-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--ink-4);
+  color: #fff;
+}
+.perm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.perm-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 560;
+}
+.perm-body {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.perm-tag {
+  font-size: 10.5px;
+  font-weight: 550;
+  color: #8a5a12;
+  background: #fbf3e2;
+  border-radius: 5px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+.space-picks {
+  overflow: hidden;
+}
+.space-picks > * {
+  margin-top: 8px;
+}
+.space-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.space-pick:hover {
+  background: var(--hover);
+}
+.space-pick .perm-input {
+  margin: 0;
+}
+.space-pick-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.segmented {
+  display: flex;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--hover);
+}
+.segment {
+  flex: 1;
+  text-align: center;
+  padding: 6px 0;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.segment[data-selected] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(28, 28, 26, 0.08), 0 0 0 1px var(--line);
+}
+.segment:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+}
+.danger-zone {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.danger-text {
+  color: var(--danger);
+}
+.danger-text:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.confirm-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fbf7f6;
+}
+.field-note.center {
+  text-align: center;
+}
+.agent-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--ink-3);
+  background: #f1f0ec;
+  border-radius: 5px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+
+/* An agent's face: the orbit mark, never a person's avatar. Ownership is shown above its message. */
+.agent-face {
+  display: inline-grid;
+  place-items: center;
+  background: #f1f0ec;
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px rgba(28, 28, 26, 0.08);
+  border-radius: 32%;
+}
+.msg-agent {
+  display: block;
+  margin: 0 0 3px 4px;
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.msg-agent b {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.msg-agent-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.msg-agent-person > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.msg[data-agent] .bubble {
+  box-shadow: inset 0 0 0 1px rgba(28, 28, 26, 0.09);
+}
+
+/* Consent */
+.consent-inner {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 18px 18px 32px;
+}
+.consent-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding-top: 18vh;
+}
+.consent-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--hover);
+  color: var(--ink-2);
+}
+.consent-icon.ok {
+  background: #e7f1e9;
+  color: #1d4429;
+}
+.consent-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+.consent-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.consent-link {
+  width: 28px;
+  border-top: 2px dotted var(--ink-4);
+}
+.consent-title {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.consent-sub {
+  color: var(--ink-2);
+}
+.consent-host {
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  word-break: break-all;
+}
+.consent-host strong {
+  color: var(--ink);
+}
+.consent-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.onb-notice {
+  font-size: 12.5px;
+  text-align: center;
+  color: var(--ink-2);
+  background: var(--hover);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.preview-label {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  bottom: 8px;
+  translate: -50% 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(28, 28, 26, 0.78);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 550;
+  pointer-events: none;
+}
+/* On phones the preview label is a strip above the app, so it never covers controls. */
+@media (max-width: 640px) {
+  .preview-label {
+    position: sticky;
+    top: 0;
+    left: auto;
+    bottom: auto;
+    translate: none;
+    display: block;
+    margin: 0;
+    border-radius: 0;
+    padding: 2px 10px;
+    text-align: center;
+    background: var(--ink);
+  }
+  .preview-label + .common-root {
+    min-height: calc(100dvh - 20px);
+  }
+  .preview-label + .common-root .device-stage.bare {
+    height: calc(100dvh - 20px);
+  }
+}
+
+/* Connect chooser: one grouped list, one row per app; only working ones are buttons. */
+.stack.tight-gap {
+  gap: 10px;
+}
+.stack.roomy {
+  gap: 24px;
+}
+.agents-sheet .section-label {
+  padding: 0 2px 8px;
+}
+.agents-sheet .section-label:focus {
+  outline: none;
+}
+.field-note.flush {
+  margin-top: 0;
+}
+.stack > .field-note.flush:not(.warn) {
+  margin-top: -6px;
+}
+.app-choices {
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  overflow: hidden;
+}
+.app-choices li + li {
+  border-top: 1px solid var(--line);
+}
+.app-choice,
+.fallback-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 13px;
+  text-align: left;
+}
+.fallback-row {
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+button.app-choice,
+.fallback-row {
+  cursor: pointer;
+  transition: background-color 0.12s, box-shadow 0.12s;
+}
+button.app-choice:hover,
+.fallback-row:hover {
+  background: var(--hover);
+}
+button.app-choice:active,
+.fallback-row:active {
+  background: var(--press);
+}
+.app-choice[aria-disabled='true'] .app-choice-icon,
+.app-choice[aria-disabled='true'] .app-choice-text {
+  opacity: 0.5;
+  filter: grayscale(0.4);
+}
+.app-choice-icon {
+  flex: none;
+}
+.app-choice-other {
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: #fff;
+}
+.app-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.app-choice-name {
+  font-weight: 600;
+}
+.app-choice-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.role-chip.soon {
+  flex: none;
+  white-space: nowrap;
+}
+/* Other agents: one clear action. The prompt itself stays hidden until someone asks to read it. */
+.connect-intro {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0 0;
+}
+.connect-intro .connect-title {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.connect-intro .connect-title:focus {
+  outline: none;
+}
+.connect-lead {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+.prompt-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+.prompt-copy .field-note {
+  margin: 0;
+}
+/* Copy buttons share a row; a clipboard fallback drops onto its own line below them. */
+.copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.copy-row > .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 6px;
+  padding-inline: 8px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.copy-row > .address-fallback {
+  flex-basis: 100%;
+}
+.prompt-copy .disclose {
+  align-self: center;
+}
+.address-fallback {
+  width: 100%;
+}
+.address-fallback .field-note {
+  margin-top: 6px;
+}
+.space-picks-hint {
+  margin: 8px 2px 4px;
+}
+.reveal-wrap {
+  width: 100%;
+  overflow: hidden;
+  margin: -3px;
+  padding: 3px;
+  box-sizing: content-box;
+}
+.prompt-view {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--hover);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+  outline: none;
+}
+.prompt-view:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+/* Agent status: connected means it has signed in at least once, not that it's online. */
+.agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.status-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3f8f5a;
+}
+.agent-status[data-status='awaiting'] {
+  color: #8a5a12;
+}
+.agent-status[data-status='awaiting'] .status-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px #c48a2c;
+}
+.agent-status[data-status='expired'] .status-dot {
+  background: var(--ink-4);
+}
+.agent-row .agent-status {
+  margin-top: 2px;
+}
+
+/* Token steps: numbered, each with one action. */
+.token-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.token-steps > li {
+  display: flex;
+  gap: 12px;
+}
+.token-steps .step-n {
+  width: 22px;
+  height: 22px;
+  font-size: 11.5px;
+  translate: 0 -1px;
+}
+.step-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.step-title {
+  font-size: 14px;
+  font-weight: 620;
+  line-height: 20px;
+}
+.step-note {
+  margin: 2px 0 12px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.step-body .prompt-copy {
+  align-items: stretch;
+}
+.step-body .prompt-copy .disclose {
+  align-self: flex-start;
+}
+.step-body .copy-field + * {
+  margin-top: 0;
+}
+.step-body .field-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+.fallback-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--ink-2);
+}
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--hover);
+}
+.notice-title {
+  font-weight: 600;
+}
+.sample-note {
+  margin-bottom: 12px;
 }

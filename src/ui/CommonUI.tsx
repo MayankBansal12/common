@@ -8,6 +8,7 @@ import { Device } from './Device';
 import { LoginScreen } from './LoginScreen';
 import { SpacesScreen } from './SpacesScreen';
 import { ChatScreen } from './ChatScreen';
+import { ConsentScreen } from './ConsentScreen';
 import './styles.css';
 
 const ease = [0.2, 0.7, 0.2, 1] as const;
@@ -15,7 +16,8 @@ const ease = [0.2, 0.7, 0.2, 1] as const;
 export default function CommonUI(props: CommonUIProps) {
   const { screen, user } = props;
   const authed = (screen === 'spaces' || screen === 'chat') && user;
-  const ready = !authed ? (screen === 'loading' ? 'loading' : 'login') : screen === 'chat' && props.activeSpace ? 'chat' : 'spaces';
+  // A pending agent connection takes over once signed in, until it's decided or dismissed.
+  const ready = !authed ? (screen === 'loading' ? 'loading' : 'login') : props.consent ? 'consent' : screen === 'chat' && props.activeSpace ? 'chat' : 'spaces';
   const splash = useSplashGate(ready === 'loading');
   // While a shown splash finishes its minimum time, keep it on screen even though loading is done.
   const view = splash.holding ? 'loading' : ready;
@@ -80,6 +82,7 @@ export default function CommonUI(props: CommonUIProps) {
                   transition={{ duration: 0.18, ease }}
                 >
                   {view === 'login' && <LoginScreen {...props} />}
+                  {view === 'consent' && user && props.consent && <ConsentScreen consent={props.consent} user={user} spaces={props.spaces} />}
                   {view === 'spaces' && user && (
                     <SpacesScreen
                       user={user}
@@ -92,6 +95,8 @@ export default function CommonUI(props: CommonUIProps) {
                       onAcceptInvitation={props.onAcceptInvitation}
                       onUpdateProfile={props.onUpdateProfile}
                       onSignOut={props.onSignOut}
+                      agents={props.agents}
+                      openAgents={props.openAgents}
                     />
                   )}
                   {view === 'chat' && user && props.activeSpace && (
@@ -101,6 +106,8 @@ export default function CommonUI(props: CommonUIProps) {
                       messages={props.messages}
                       typing={props.typing}
                       members={props.members}
+                      spaces={props.spaces}
+                      agents={props.agents}
                       invitations={props.invitations}
                       activities={props.activities}
                       isOnline={props.isOnline}
