@@ -1,13 +1,14 @@
-import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowDown, ArrowUp, ChevronLeft, RotateCw, UserPlus } from 'lucide-react';
-import type { Activity, Invitation, Message, Person, Space, SpaceInput, TypingPerson } from '../types';
+import type { Activity, AgentProps, Invitation, Message, Person, Space, SpaceInput, TypingPerson } from '../types';
 import { Avatar, SpaceBadge, Spinner } from './primitives';
 import { MembersDialog } from './MembersDialog';
-import { AgentAvatar } from './agents';
+import { AgentAvatar, AgentFace } from './agents';
 import { useAmbientTint } from './Device';
 import { SITE } from '../site';
 import { SpaceSheet } from './SpaceDialogs';
+import { AgentsSheet } from './AgentsSheet';
 import { tone } from './palette';
 import { isJumboEmoji, renderMessage } from './markdown';
 import { dayKey, dayLabel, timeOf } from './format';
@@ -18,6 +19,8 @@ type Props = {
   messages: Message[];
   typing: TypingPerson[];
   members: Person[];
+  spaces: Space[];
+  agents?: AgentProps;
   invitations: Invitation[];
   activities: Activity[];
   isOnline: boolean;
@@ -35,6 +38,9 @@ type Props = {
 };
 
 const keyOf = (m: Message) => m.clientId || m.id;
+// An agent's messages are its own, never its person's: they group separately and sit on the left.
+const authorOf = (m: Message) => (m.agent ? `agent:${m.agent.id}` : `person:${m.sender.id}`);
+const isMine = (m: Message | undefined, userId: string) => !!m && !m.agent && m.sender.id === userId;
 
 // The rich-text editor is the heaviest part of the app; it loads on its own, fetched in the
 // background at startup so it is usually ready before a chat is opened.
@@ -75,6 +81,8 @@ export function ChatScreen(p: Props) {
   const reduce = useReducedMotion();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [agentsOpen, setAgentsOpen] = useState(false);
+  const agentsButton = useRef<HTMLButtonElement>(null);
   const [editOpen, setEditOpen] = useState(false);
   useAmbientTint(space.color);
   const typers = useActiveTypers(p.typing);
@@ -113,7 +121,7 @@ export function ChatScreen(p: Props) {
         el.scrollTop += el.scrollHeight - lastHeight.current;
       } else if (last !== e.last) {
         const tail = messages[messages.length - 1];
-        if (atBottom.current || stickNext.current || tail?.sender.id === user.id) {
+        if (atBottom.current || stickNext.current || isMine(tail, user.id)) {
           el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' });
           atBottom.current = true;
           stickNext.current = false;
@@ -165,11 +173,10 @@ export function ChatScreen(p: Props) {
     setUnseen(0);
   }
 
-  const others = p.members.filter((m) => m.id !== user.id);
-  const stack = (others.length ? others : p.members).slice(0, 3);
+  const stack = p.members.slice(0, 3);
 
   let lastMineIdx = messages.length - 1;
-  while (lastMineIdx >= 0 && messages[lastMineIdx].sender.id !== user.id) lastMineIdx--;
+  while (lastMineIdx >= 0 && !isMine(messages[lastMineIdx], user.id)) lastMineIdx--;
 
   return (
     <div className="screen chat">
@@ -199,7 +206,7 @@ export function ChatScreen(p: Props) {
           {stack.map((m) => (
             <Avatar key={m.id} person={m} size={24} className="stacked" />
           ))}
-          {p.members.length > 3 && <span className="stack-more">+{p.members.length - 3}</span>}
+          {p.members.length > stack.length && <span className="stack-more">+{p.members.length - stack.length}</span>}
         </button>
       </header>
 
@@ -228,6 +235,9 @@ export function ChatScreen(p: Props) {
                 void p.onSendMessage('Hi everyone 👋').catch(() => {});
               }}
               onInvite={() => setMembersOpen(true)}
+              onAgents={() => setAgentsOpen(true)}
+              agentsButton={agentsButton}
+              hasAgents={!!p.agents}
             />
           )}
           {/* Drag the thread left to reveal each message's time, as in iMessage. */}
@@ -246,8 +256,8 @@ export function ChatScreen(p: Props) {
               const prev = messages[i - 1];
               const next = messages[i + 1];
               const divider = !prev || breaksAt(prev, m);
-              const first = divider || prev.sender.id !== m.sender.id || m.createdAt - prev.createdAt > GROUP_GAP;
-              const last = !next || breaksAt(m, next) || next.sender.id !== m.sender.id || next.createdAt - m.createdAt > GROUP_GAP;
+              const first = divider || authorOf(prev) !== authorOf(m) || m.createdAt - prev.createdAt > GROUP_GAP;
+              const last = !next || breaksAt(m, next) || authorOf(next) !== authorOf(m) || next.createdAt - m.createdAt > GROUP_GAP;
               const k = keyOf(m);
               const animate = ready && !known.current.has(k) && i > prevTailIdx;
               return (
@@ -261,7 +271,7 @@ export function ChatScreen(p: Props) {
                   )}
                   <MessageRow
                     m={m}
-                    mine={m.sender.id === user.id}
+                    mine={isMine(m, user.id)}
                     first={first}
                     last={last}
                     latestMine={i === lastMineIdx}
@@ -307,12 +317,13 @@ export function ChatScreen(p: Props) {
               stickNext.current = true;
               return p.onSendMessage(body);
             }}
-            isQueued={(body) => latest.current.some((m) => m.sender.id === user.id && m.body === body && m.status !== 'sent')}
+            isQueued={(body) => latest.current.some((m) => isMine(m, user.id) && m.body === body && m.status !== 'sent')}
           />
         </Suspense>
       </div>
 
       <SpaceSheet open={editOpen} onOpenChange={setEditOpen} space={space} onSubmit={p.onUpdateSpace} />
+      {p.agents && <AgentsSheet open={agentsOpen} onOpenChange={setAgentsOpen} spaces={p.spaces} agents={p.agents} space={space} returnFocus={agentsButton} />}
       <MembersDialog
         open={membersOpen}
         onOpenChange={setMembersOpen}
@@ -330,7 +341,7 @@ export function ChatScreen(p: Props) {
 }
 
 /** A new space: its badge, who it's for (you, your people, your agents) and a first step. */
-function EmptyChat({ space, user, members, onSayHi, onInvite }: { space: Space; user: Person; members: Person[]; onSayHi: () => void; onInvite: () => void }) {
+function EmptyChat({ space, user, members, onSayHi, onInvite, onAgents, agentsButton, hasAgents }: { space: Space; user: Person; members: Person[]; onSayHi: () => void; onInvite: () => void; onAgents: () => void; agentsButton: RefObject<HTMLButtonElement | null>; hasAgents: boolean }) {
   const others = members.filter((m) => m.id !== user.id);
   const enter = (i: number) => ({
     initial: { opacity: 0, scale: 0.6, y: 6 },
@@ -363,12 +374,12 @@ function EmptyChat({ space, user, members, onSayHi, onInvite }: { space: Space; 
           )}
           <span className="seat-label">People</span>
         </motion.div>
-        <motion.div className="seat" {...enter(2)}>
+        <motion.button ref={agentsButton} type="button" className="seat seat-agents" onClick={onAgents} disabled={!hasAgents} aria-label={`Agents in ${space.name}`} title="Agents" {...enter(2)}>
           <span className="seat-ring" aria-hidden="true">
             <AgentAvatar agent="claude" size={40} />
           </span>
           <span className="seat-label">Agents</span>
-        </motion.div>
+        </motion.button>
       </div>
 
       <div className="chat-empty-actions">
@@ -512,9 +523,11 @@ const MessageRow = memo(function MessageRow({
   const status = m.status ?? 'sent';
   const jumbo = isJumboEmoji(m.body);
   const time = timeOf(m.createdAt);
+  const agentLabel = m.agent ? `${m.agent.name} for ${m.sender.name}` : null;
   return (
     <motion.li
       className={`msg ${mine ? 'mine' : 'theirs'}`}
+      data-agent={m.agent ? true : undefined}
       data-status={status}
       data-first={first || undefined}
       data-last={last || undefined}
@@ -523,26 +536,40 @@ const MessageRow = memo(function MessageRow({
       transition={{ type: 'spring', stiffness: 560, damping: 34, mass: 0.7 }}
       style={{ transformOrigin: mine ? '100% 100%' : '0% 100%' } as CSSProperties}
     >
-      {/* The avatar and name close a group together, on the left. */}
+      {/* People have a short name under their avatar; agents are attributed above the bubble. */}
       {!mine && (
         <span className="msg-avatar">
-          {last && (
-            <>
-              <Avatar person={m.sender} size={28} />
-              <span className="msg-name" title={m.sender.name}>
-                {firstName(m.sender.name)}
+          {last &&
+            (m.agent ? (
+              <span title={agentLabel!}>
+                <AgentFace size={28} color={m.sender.color} />
               </span>
-            </>
-          )}
+            ) : (
+              <>
+                <Avatar person={m.sender} size={28} />
+                <span className="msg-name" title={m.sender.name}>
+                  {firstName(m.sender.name)}
+                </span>
+              </>
+            ))}
         </span>
       )}
       <div className="msg-stack">
+        {m.agent && first && (
+          <span className="msg-agent" title={agentLabel!} aria-hidden="true">
+            <b>{m.agent.name}</b>{' for '}
+            <span className="msg-agent-person">
+              <Avatar person={m.sender} size={14} />
+              <span>{m.sender.name}</span>
+            </span>
+          </span>
+        )}
         <div
           className={jumbo ? 'bubble jumbo' : `bubble${last ? ' tail' : ''}`}
           style={{ '--b-bg': t.bg, '--b-ink': t.ink } as CSSProperties}
           title={time}
         >
-          <span className="sr-only">{mine ? 'You' : m.sender.name}: </span>
+          <span className="sr-only">{mine ? 'You' : agentLabel ?? m.sender.name}: </span>
           {jumbo ? m.body.trim() : <MessageBody body={m.body} startOpen={mine && animate} />}
         </div>
         {status === 'sending' && <span className="msg-status">Sending…</span>}

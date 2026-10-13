@@ -1,12 +1,13 @@
 import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAuthActions } from '@convex-dev/auth/react';
-import { useConvexAuth, useConvexConnectionState, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
+import { useAction, useConvexAuth, useConvexConnectionState, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
-import type { CommonUIProps, Message, Person } from './types';
+import type { AgentGrant, AgentProps, CommonUIProps, ConsentProps, Message, Person } from './types';
 import CommonUI from './ui/CommonUI';
 import { clearCache, readCachedSpaces, readCachedUser, writeCachedSpaces, writeCachedUser } from './cache';
+import { mcpUrlFrom } from './mcpUrl';
 import { MESSAGE_LIMIT } from './ui/format';
 
 function errorMessage(error: unknown) {
@@ -32,7 +33,32 @@ function readOutbox(userId: string): OutboxEntry[] {
   } catch { return []; }
 }
 
+/**
+ * An agent's browser sign-in arrives as `/?authorize=<request>`. The request is kept for this tab so
+ * it survives signing in (Google sign-in leaves and returns to the app), then removed from the URL.
+ */
+const AUTHORIZE_KEY = 'common:authorize';
+function takeAuthorizeRequest() {
+  const url = new URL(window.location.href);
+  const fromUrl = url.searchParams.get('authorize');
+  try {
+    if (fromUrl && /^[A-Za-z0-9_-]{16,64}$/.test(fromUrl)) sessionStorage.setItem(AUTHORIZE_KEY, fromUrl);
+    if (fromUrl !== null) {
+      url.searchParams.delete('authorize');
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+    }
+    return sessionStorage.getItem(AUTHORIZE_KEY);
+  } catch {
+    return fromUrl;
+  }
+}
+function forgetAuthorizeRequest() {
+  try { sessionStorage.removeItem(AUTHORIZE_KEY); } catch { /* nothing stored */ }
+}
+const MCP_URL = mcpUrlFrom({ siteUrl: import.meta.env.VITE_CONVEX_SITE_URL, convexUrl: import.meta.env.VITE_CONVEX_URL });
+
 export default function App() {
+  const [authorizeId, setAuthorizeId] = useState(takeAuthorizeRequest);
   const { isAuthenticated, isLoading } = useConvexAuth();
   const user = useQuery(api.users.me, isAuthenticated ? {} : 'skip');
   // Once sign-in is confirmed, open with the profile remembered on this device instead of waiting for it.
@@ -53,7 +79,7 @@ export default function App() {
   };
   const authProps = {
     emailStep, emailAddress, authBusy, authAvailable: authOptions ?? null,
-    onGoogleSignIn: () => performAuth(() => authActions.signIn('google', { redirectTo: '/' })),
+    onGoogleSignIn: () => performAuth(() => authActions.signIn('google', { redirectTo: authorizeId ? `/?authorize=${encodeURIComponent(authorizeId)}` : '/' })),
     onEmailSignIn: (address: string) => performAuth(async () => {
       const normalized = address.trim().toLowerCase();
       await authActions.signIn('resend-otp', { email: normalized });
@@ -61,10 +87,11 @@ export default function App() {
     }),
     onVerifyCode: (code: string) => performAuth(() => authActions.signIn('resend-otp', { email: emailAddress, code: code.trim() })),
     onBackToEmail: () => { setEmailStep('email'); setError(null); },
-    onSignOut: async () => { await authActions.signOut(); clearCache(); window.location.hash = ''; setEmailStep('email'); setEmailAddress(''); },
+    onSignOut: async () => { await authActions.signOut(); clearCache(); forgetAuthorizeRequest(); setAuthorizeId(null); window.location.hash = ''; setEmailStep('email'); setEmailAddress(''); },
   };
-  if (isAuthenticated && me) return <ConnectedApp key={me.id} user={me} authProps={authProps} />;
-  return <CommonUI {...emptyProps} {...authProps} screen={isLoading || (isAuthenticated && user === undefined) ? 'loading' : 'login'} error={error} onDismissError={() => setError(null)} />;
+  const endAuthorize = () => { forgetAuthorizeRequest(); setAuthorizeId(null); };
+  if (isAuthenticated && me) return <ConnectedApp key={me.id} user={me} authProps={authProps} authorizeId={authorizeId} onEndAuthorize={endAuthorize} />;
+  return <CommonUI {...emptyProps} {...authProps} authNotice={authorizeId ? 'Sign in to finish connecting your agent to Common.' : undefined} screen={isLoading || (isAuthenticated && user === undefined) ? 'loading' : 'login'} error={error} onDismissError={() => setError(null)} />;
 }
 
 const noop = async () => {};
@@ -74,7 +101,9 @@ export const emptyProps: CommonUIProps = {
 };
 type AuthProps = Pick<CommonUIProps, 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onSignOut'>;
 
-function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps }) {
+function ConnectedApp({ user, authProps, authorizeId, onEndAuthorize }: { user: Person; authProps: AuthProps; authorizeId: string | null; onEndAuthorize: () => void }) {
+  const agents = useAgents();
+  const consent = useConsent(authorizeId, onEndAuthorize);
   const spaceList = useQuery(api.spaces.list);
   // Show the last-known list right away; the live one replaces it as soon as it arrives.
   const [cachedSpaces] = useState(() => readCachedSpaces(user.id));
@@ -152,7 +181,7 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
   const perform = async <T,>(fn: () => Promise<T>): Promise<T> => { setError(null); try { return await fn(); } catch (e) { const message = errorMessage(e); setError(message); throw new Error(message); } };
   const confirmedIds = new Set(paginated.results.map(m => m.clientId));
   const messages: Message[] = [...[...paginated.results].reverse(), ...outbox.filter(m => m.spaceId === shownSpaceId && !confirmedIds.has(m.clientId))].sort((a, b) => a.createdAt - b.createdAt);
-  return <CommonUI {...emptyProps} {...authProps}
+  return <CommonUI {...emptyProps} {...authProps} agents={agents} consent={consent}
     // Reopening a chat (#space=…) keeps the splash until that space has loaded, rather than flashing the list.
     screen={selected && spaceList === undefined && !activeSpace ? 'loading' : activeSpace ? 'chat' : 'spaces'} isLoadingSpaces={spaceList === undefined && !cachedSpaces} user={user} spaces={spaces} activeSpace={activeSpace} messages={messages} members={members} invitations={invitations} pendingInvitations={pendingInvitations} activities={activities} typing={typing}
     isOnline={isOnline} isLoadingMessages={paginated.status === 'LoadingFirstPage' || (!!activeSpace && !spaceId)} hasMoreMessages={paginated.status === 'CanLoadMore'} error={error} onDismissError={() => setError(null)}
@@ -176,4 +205,40 @@ function ConnectedApp({ user, authProps }: { user: Person; authProps: AuthProps 
     onAcceptInvitation={async id => { const joined = await perform(() => accept({ invitationId: id as Id<'invitations'> })); select(joined); }}
     onUpdateProfile={async ({ image, ...input }) => { await perform(async () => updateProfile({ ...input, imageId: await upload(image) })); }}
   />;
+}
+
+const toServerGrant = (g: AgentGrant) => ({ ...g, spaceIds: g.spaceIds as Id<'spaces'>[] });
+
+/** Connected agents for the signed-in person. Tokens are returned once by the action and never stored here. */
+function useAgents(): AgentProps {
+  const connections = useQuery(api.agents.list);
+  const update = useMutation(api.agents.update);
+  const revoke = useMutation(api.agents.revoke);
+  const createToken = useAction(api.agents.createToken);
+  return {
+    connections,
+    mcpUrl: MCP_URL,
+    onUpdate: async (id, grant) => { await update({ connectionId: id as Id<'agentConnections'>, ...toServerGrant(grant) }); },
+    onRevoke: async id => { await revoke({ connectionId: id as Id<'agentConnections'> }); },
+    onCreateToken: async ({ expiresInDays, ...grant }) => (await createToken({ ...toServerGrant(grant), expiresInDays })).token,
+  };
+}
+
+/** A pending agent sign-in: approving or declining sends the browser back to the agent. */
+function useConsent(requestId: string | null, onEnd: () => void): ConsentProps | undefined {
+  const request = useQuery(api.agents.consentRequest, requestId ? { requestId } : 'skip');
+  const approve = useAction(api.agents.approve);
+  const deny = useMutation(api.agents.deny);
+  if (!requestId) return undefined;
+  const leave = (url: string | null) => {
+    forgetAuthorizeRequest();
+    if (url) window.location.assign(url);
+    else onEnd();
+  };
+  return {
+    request: request ?? { status: 'loading' },
+    onApprove: async grant => leave((await approve({ requestId, ...toServerGrant(grant) })).redirectUrl),
+    onDeny: async () => leave((await deny({ requestId })).redirectUrl),
+    onDismiss: onEnd,
+  };
 }

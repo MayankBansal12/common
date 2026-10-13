@@ -1,36 +1,49 @@
 import { mutation, query, type MutationCtx } from './_generated/server';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { paginationOptsValidator } from 'convex/server';
 import { v, ConvexError } from 'convex/values';
-import { person, rateLimit, requireMember } from './lib/access';
+import { person, rateLimit, requireMember, type Actor } from './lib/access';
 // Short by design: long enough for a real message or an agent prompt, short enough to stay conversational.
 export const MESSAGE_LIMIT = 2000;
 export const list = query({ args: { spaceId: v.id('spaces'), paginationOpts: paginationOptsValidator }, handler: async (ctx, { spaceId, paginationOpts }) => {
   await requireMember(ctx, spaceId);
   const result = await ctx.db.query('messages').withIndex('by_space', q => q.eq('spaceId', spaceId)).order('desc').paginate({ ...paginationOpts, numItems: Math.min(paginationOpts.numItems, 100) });
   const authors = new Map(await Promise.all([...new Set(result.page.map(m => m.senderId))].map(async id => [id, await person(ctx, id)] as const)));
-  return { ...result, page: result.page.map(m => ({ id: m._id, clientId: m.clientId, body: m.body, createdAt: m._creationTime, sequence: m.sequence, sender: { ...authors.get(m.senderId)!, color: m.color ?? authors.get(m.senderId)!.color }, status: 'sent' as const })) };
+  return { ...result, page: result.page.map(m => ({ id: m._id, clientId: m.clientId, body: m.body, createdAt: m._creationTime, sequence: m.sequence, sender: { ...authors.get(m.senderId)!, color: m.color ?? authors.get(m.senderId)!.color }, agent: m.agentId && m.agentName ? { id: m.agentId, name: m.agentName } : undefined, status: 'sent' as const })) };
 }});
 export const send = mutation({ args: { spaceId: v.id('spaces'), body: v.string(), clientId: v.string() }, handler: async (ctx, { spaceId, body, clientId }) => {
   const { user, membership } = await requireMember(ctx, spaceId);
+  if (!/^[a-zA-Z0-9_-]{16,80}$/.test(clientId)) throw new ConvexError('Invalid message identifier.');
+  return (await postMessage(ctx, { user }, membership, body, clientId)).id;
+}});
+
+/**
+ * The one way a message is written. People's client IDs never contain ':', so agent request IDs,
+ * namespaced as `agent:<connection>:<id>`, can't collide with them in the shared index.
+ * Only a person sending moves their own read marker and clears their typing signal.
+ */
+export async function postMessage(ctx: MutationCtx, actor: Actor, membership: Doc<'memberships'>, body: string, clientId: string) {
+  const { user, agent } = actor;
+  const spaceId = membership.spaceId;
   const text = body.trim();
   if (!text || text.length > MESSAGE_LIMIT) throw new ConvexError('Messages must be between 1 and 2,000 characters.');
-  if (!/^[a-zA-Z0-9_-]{16,80}$/.test(clientId)) throw new ConvexError('Invalid message identifier.');
   const existing = await ctx.db.query('messages').withIndex('by_sender_client', q => q.eq('senderId', user._id).eq('clientId', clientId)).unique();
   if (existing) {
     if (existing.spaceId !== spaceId || existing.body !== text) throw new ConvexError('Message identifier already used.');
-    return existing._id;
+    return { id: existing._id, sequence: existing.sequence, duplicate: true };
   }
-  await rateLimit(ctx, `message:${user._id}`, 30, 10_000);
+  await rateLimit(ctx, agent ? `agent-message:${agent.id}` : `message:${user._id}`, 30, 10_000);
   const space = await ctx.db.get(spaceId);
   if (!space) throw new ConvexError('Space not found.');
   const sequence = space.messageCount + 1;
-  const id = await ctx.db.insert('messages', { spaceId, senderId: user._id, actorKind: 'human', color: membership.color, body: text, clientId, sequence });
+  const id = await ctx.db.insert('messages', { spaceId, senderId: user._id, actorKind: agent ? 'agent' : 'human', agentId: agent?.id, agentName: agent?.name, color: membership.color, body: text, clientId, sequence });
   await ctx.db.patch(spaceId, { messageCount: sequence, lastMessage: text.slice(0, 120), updatedAt: Date.now() });
-  await ctx.db.patch(membership._id, { lastReadSequence: sequence });
-  await clearTyping(ctx, spaceId, user._id);
-  return id;
-}});
+  if (!agent) {
+    await ctx.db.patch(membership._id, { lastReadSequence: sequence });
+    await clearTyping(ctx, spaceId, user._id);
+  }
+  return { id, sequence, duplicate: false };
+}
 
 // Typing: clients send `typing: true` every few seconds while composing and `false` when they stop.
 // A row counts for TYPING_TTL after its last refresh, so a closed tab simply times out.

@@ -1,7 +1,9 @@
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { ConvexError } from 'convex/values';
-import type { Id } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+/** Who performs a change: a person, or an agent acting for that person (attributed to both). */
+export type Actor = { user: Doc<'users'>; agent?: { id: Id<'agentConnections'>; name: string } };
 export async function requireUser(ctx: QueryCtx | MutationCtx) {
   const id = await getAuthUserId(ctx);
   const user = id ? await ctx.db.get(id) : null;
@@ -30,12 +32,17 @@ export function cleanName(value: string, max = 60) {
   return name;
 }
 export async function rateLimit(ctx: MutationCtx, key: string, max: number, windowMs: number) {
+  if (await takeRateLimit(ctx, key, max, windowMs)) throw new ConvexError('A little too fast. Please try again shortly.');
+}
+/** Counts one hit against `key`. Returns 0 when allowed, otherwise milliseconds until the window resets (nothing is written). */
+export async function takeRateLimit(ctx: MutationCtx, key: string, max: number, windowMs: number) {
   const current = await ctx.db.query('rateLimits').withIndex('by_key', q => q.eq('key', key)).unique();
   const now = Date.now();
-  if (!current) { await ctx.db.insert('rateLimits', { key, start: now, count: 1 }); return; }
-  if (now - current.start >= windowMs) { await ctx.db.patch(current._id, { start: now, count: 1 }); return; }
-  if (current.count >= max) throw new ConvexError('A little too fast. Please try again shortly.');
+  if (!current) { await ctx.db.insert('rateLimits', { key, start: now, count: 1 }); return 0; }
+  if (now - current.start >= windowMs) { await ctx.db.patch(current._id, { start: now, count: 1 }); return 0; }
+  if (current.count >= max) return Math.max(1, current.start + windowMs - now);
   await ctx.db.patch(current._id, { count: current.count + 1 });
+  return 0;
 }
 export async function person(ctx: QueryCtx | MutationCtx, userId: Id<'users'>, includeEmail = false) {
   const user = await ctx.db.get(userId);

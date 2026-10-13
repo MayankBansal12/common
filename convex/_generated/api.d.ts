@@ -8,13 +8,18 @@
  * @module
  */
 
+import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
+import type * as lib_agents from "../lib/agents.js";
 import type * as lib_email from "../lib/email.js";
+import type * as mcp from "../mcp.js";
+import type * as mcpHttp from "../mcpHttp.js";
 import type * as members from "../members.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
+import type * as oauth from "../oauth.js";
 import type * as spaces from "../spaces.js";
 import type * as users from "../users.js";
 
@@ -25,13 +30,18 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agents: typeof agents;
   auth: typeof auth;
   http: typeof http;
   "lib/access": typeof lib_access;
+  "lib/agents": typeof lib_agents;
   "lib/email": typeof lib_email;
+  mcp: typeof mcp;
+  mcpHttp: typeof mcpHttp;
   members: typeof members;
   messages: typeof messages;
   notifications: typeof notifications;
+  oauth: typeof oauth;
   spaces: typeof spaces;
   users: typeof users;
 }>;

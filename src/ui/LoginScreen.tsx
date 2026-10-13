@@ -10,7 +10,7 @@ import { errorText, isEmail } from './format';
 
 type Props = Pick<
   CommonUIProps,
-  'error' | 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onDismissError'
+  'error' | 'emailStep' | 'emailAddress' | 'authBusy' | 'authAvailable' | 'onGoogleSignIn' | 'onEmailSignIn' | 'onVerifyCode' | 'onBackToEmail' | 'onDismissError' | 'authNotice'
 >;
 
 const CODE_LENGTH = 6;
@@ -134,6 +134,7 @@ export function LoginScreen(p: Props) {
               busy={busy}
               pending={pending}
               available={p.authAvailable}
+              notice={p.authNotice}
               error={shownError}
               onGoogle={() => void attempt('google', p.onGoogleSignIn)}
               onEmail={() => go('email')}
@@ -176,6 +177,7 @@ function Welcome(p: {
   busy: boolean;
   pending: string | null;
   available: { google: boolean; email: boolean } | null;
+  notice?: string;
   error: string | null;
   onGoogle: () => void;
   onEmail: () => void;
@@ -305,6 +307,7 @@ function Welcome(p: {
       </div>
 
       <motion.div className="onb-cta" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.45, ease }}>
+        {p.notice && <p className="onb-notice" role="status">{p.notice}</p>}
         {/* Both options are always laid out; each switches on once the deployment confirms it, so nothing jumps. */}
         <button type="button" className="btn btn-primary btn-block btn-xl" disabled={p.busy || !p.available?.google} aria-busy={!p.available || undefined} onClick={p.onGoogle}>
           {p.pending === 'google' ? <Spinner size={16} /> : <GoogleG />}

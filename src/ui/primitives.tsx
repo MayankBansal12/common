@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'motion/react';
 import { LoaderCircle, X } from 'lucide-react';
@@ -172,6 +172,7 @@ export function Sheet({
   titleAddon,
   children,
   className,
+  returnFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -180,6 +181,8 @@ export function Sheet({
   titleAddon?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Where focus goes on close when the opener is gone (e.g. a menu item that unmounted with its menu). */
+  returnFocus?: RefObject<HTMLElement | null>;
 }) {
   // Dialogs open from state rather than a Radix Trigger, so restore focus to whatever opened them.
   const returnTo = useRef<HTMLElement | null>(null);
@@ -206,7 +209,9 @@ export function Sheet({
                 e.preventDefault();
               }}
               onCloseAutoFocus={(e) => {
-                const el = returnTo.current;
+                // Opened with nothing focused (e.g. on load), the opener is <body>: use the fallback instead.
+                const prev = returnTo.current;
+                const el = prev?.isConnected && prev !== document.body ? prev : returnFocus?.current;
                 if (el?.isConnected) {
                   e.preventDefault();
                   el.focus({ preventScroll: true });

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, Mail, PenLine, Sparkles, UserMinus, UserPlus, UserRoundCheck, UserRoundX, X } from 'lucide-react';
+import { Check, CirclePlus, Mail, PenLine, UserMinus, UserPlus, UserRoundCheck, UserRoundX, X } from 'lucide-react';
 import type { Activity, Invitation, Person, Space } from '../types';
 import { Avatar, InlineError, Sheet, SpaceBadge, Spinner } from './primitives';
 import { ago, errorText, isEmail } from './format';
@@ -284,7 +284,7 @@ function MembersPanel(p: Props) {
 }
 
 const ACTIVITY_ICON = {
-  space_created: Sparkles,
+  space_created: CirclePlus,
   member_invited: Mail,
   member_joined: UserRoundCheck,
   member_removed: UserRoundX,
@@ -293,20 +293,22 @@ const ACTIVITY_ICON = {
 } as const;
 
 function activityText(a: Activity) {
+  // Changes an agent made show its name next to the person it acts for.
+  const who = a.agentName ? <><strong>{a.agentName}</strong> (agent for {a.actorName})</> : <strong>{a.actorName}</strong>;
   const s = a.subject ? ` ${a.subject}` : '';
   switch (a.kind) {
     case 'space_created':
-      return <><strong>{a.actorName}</strong> created the space</>;
+      return <>{who} created the space</>;
     case 'member_invited':
-      return <><strong>{a.actorName}</strong> invited{s}</>;
+      return <>{who} invited{s}</>;
     case 'member_joined':
-      return <><strong>{a.actorName}</strong> joined</>;
+      return <>{who} joined</>;
     case 'member_removed':
-      return <><strong>{a.actorName}</strong> removed{s}</>;
+      return <>{who} removed{s}</>;
     case 'invite_revoked':
-      return <><strong>{a.actorName}</strong> revoked the invite for{s || ' someone'}</>;
+      return <>{who} revoked the invite for{s || ' someone'}</>;
     case 'space_updated':
-      return a.subject ? <><strong>{a.actorName}</strong> renamed the space to{s}</> : <><strong>{a.actorName}</strong> updated the space</>;
+      return a.subject ? <>{who} renamed the space to{s}</> : <>{who} updated the space</>;
   }
 }
 
@@ -316,7 +318,7 @@ function ActivityPanel({ activities }: { activities: Activity[] }) {
   return (
     <ol className="activity">
       {items.map((a) => {
-        const Icon = ACTIVITY_ICON[a.kind] ?? Sparkles;
+        const Icon = ACTIVITY_ICON[a.kind] ?? CirclePlus;
         return (
           <li key={a.id} className="activity-row">
             <span className="activity-icon" aria-hidden="true">
