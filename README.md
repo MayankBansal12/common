@@ -11,6 +11,4 @@ https://github.com/user-attachments/assets/0345cdc7-cdbf-4872-9e45-cf59b829497d
 - choose each agent's permissions and spaces, and revoke access anytime.
 - make it yours with profile photos, space photos, and colors.
 
-[run it locally](docs/development.md)
-
 please report failures by opening an issue. pull requests are welcome.
