@@ -85,7 +85,10 @@ export const remove = mutation({ args: { spaceId: v.id('spaces'), userId: v.id('
   const { user, membership } = await requireOwner(ctx, spaceId);
   await removeMember(ctx, { user }, membership, userId);
 }});
-/** Owner only. The removed person's agents lose the space too, so re-inviting them never quietly restores agent access. */
+/**
+ * Owner only. The removed person's agents lose the space too, so re-inviting them never quietly restores
+ * agent access, and their catch-up checkpoints go with it.
+ */
 export async function removeMember(ctx: MutationCtx, { user, agent }: Actor, membership: Doc<'memberships'>, userId: Id<'users'>) {
   const spaceId = membership.spaceId;
   if (membership.role !== 'owner') throw new ConvexError('Only the space owner can do this.');
@@ -97,6 +100,8 @@ export async function removeMember(ctx: MutationCtx, { user, agent }: Actor, mem
   if (space) await ctx.db.patch(spaceId, { memberCount: Math.max(1, space.memberCount - 1) });
   for (const connection of await ctx.db.query('agentConnections').withIndex('by_user', q => q.eq('userId', userId)).collect()) {
     if (connection.spaceIds.includes(spaceId)) await ctx.db.patch(connection._id, { spaceIds: connection.spaceIds.filter(id => id !== spaceId) });
+    const checkpoint = await ctx.db.query('agentCheckpoints').withIndex('by_connection_space', q => q.eq('connectionId', connection._id).eq('spaceId', spaceId)).unique();
+    if (checkpoint) await ctx.db.delete(checkpoint._id);
   }
   await ctx.db.insert('activities', { spaceId, actorId: user._id, kind: 'member_removed', subject: (await person(ctx, userId)).name, agentName: agent?.name });
 }

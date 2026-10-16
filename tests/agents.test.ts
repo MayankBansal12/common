@@ -138,7 +138,7 @@ describe('scopes', () => {
     const { owner, connect, rpc } = await setup();
     const names = async (scopes: string[]) => (await rpc((await connect(owner, { scopes })).token, 'tools/list')).body.result.tools.map((t: { name: string }) => t.name).sort();
     expect(await names([])).toEqual(['whoami']);
-    expect(await names(['messages:read'])).toEqual(['list_members', 'list_spaces', 'read_messages', 'whoami']);
+    expect(await names(['messages:read'])).toEqual(['catch_up', 'list_members', 'list_spaces', 'read_messages', 'search_messages', 'whoami']);
     expect(await names(['messages:send'])).toEqual(['list_spaces', 'send_message', 'whoami']);
     expect(await names(['profile:write'])).toEqual(['update_profile', 'whoami']);
     expect(await names(['spaces:manage'])).toEqual(['create_space', 'invite_member', 'list_members', 'list_spaces', 'remove_member', 'revoke_invitation', 'update_space', 'whoami']);
@@ -149,6 +149,8 @@ describe('scopes', () => {
     const { token: none } = await connect(owner, { scopes: [] });
     const cases: [string, Record<string, unknown>, string][] = [
       ['read_messages', { space_id: spaceId }, 'messages:read'],
+      ['catch_up', {}, 'messages:read'],
+      ['search_messages', { query: 'plans' }, 'messages:read'],
       ['send_message', { space_id: spaceId, text: 'Hi', request_id: requestId() }, 'messages:send'],
       ['create_space', { name: 'Agent space' }, 'spaces:manage'],
       ['update_space', { space_id: spaceId, name: 'Renamed' }, 'spaces:manage'],
@@ -297,6 +299,164 @@ describe('messages from agents', () => {
     const newer = (await tool(token, 'read_messages', { space_id: spaceId, after_sequence: 5 })).data;
     expect(newer.messages.map((m: { sequence: number }) => m.sequence)).toEqual([6, 7]);
     expect(newer).toMatchObject({ has_more: false, next_after_sequence: 7 });
+  });
+});
+
+describe('catching up and searching', () => {
+  type Space = { space: { id: string; name: string }; messages: { sequence: number; text: string; author: Record<string, unknown> }[]; has_more: boolean; checkpoint_sequence: number };
+  const texts = (space: Space) => space.messages.map(m => m.text);
+  let n = 0;
+  const say = (who: { mutation: (fn: typeof api.messages.send, args: { spaceId: Id<'spaces'>; body: string; clientId: string }) => Promise<unknown> }, spaceId: Id<'spaces'>, body: string) =>
+    who.mutation(api.messages.send, { spaceId, body, clientId: `catch-up-message-${String(++n).padStart(4, '0')}` });
+
+  test('catch_up starts at the person’s unread messages, moves only this connection’s checkpoint, and peek moves nothing', async () => {
+    const { t, owner, guest, ids, connect, tool, spaceId } = await setup();
+    await say(owner, spaceId, 'One');
+    await say(owner, spaceId, 'Two');
+    await guest.mutation(api.spaces.markRead, { spaceId, sequence: 1 });
+    const { token, connectionId } = await connect(guest);
+    for (let i = 0; i < 2; i++) {
+      const peeked = (await tool(token, 'catch_up', { peek: true })).data.spaces;
+      expect(peeked).toHaveLength(1);
+      expect(peeked[0]).toMatchObject({ space: { id: spaceId, name: 'Studio' }, has_more: false, checkpoint_sequence: 1 });
+      expect(texts(peeked[0])).toEqual(['Two']);
+    }
+    expect(await t.run(ctx => ctx.db.query('agentCheckpoints').collect())).toEqual([]);
+    const first = (await tool(token, 'catch_up')).data.spaces;
+    expect(texts(first[0])).toEqual(['Two']);
+    expect(first[0].checkpoint_sequence).toBe(2);
+    expect((await tool(token, 'catch_up')).data).toEqual({ spaces: [], next_cursor: null });
+
+    await say(owner, spaceId, 'Three');
+    await tool(token, 'send_message', { space_id: spaceId, text: 'Four', request_id: requestId() });
+    const next = (await tool(token, 'catch_up')).data.spaces[0] as Space;
+    expect(next.messages.map(m => [m.sequence, m.text])).toEqual([[3, 'Three'], [4, 'Four']]);
+    expect(next.messages[0].author).toEqual({ kind: 'person', name: 'Owner', user_id: ids.owner, is_you: false });
+    expect(next.messages[1].author).toEqual({ kind: 'agent', agent_name: 'Helper', on_behalf_of: 'Guest', user_id: ids.guest, is_this_connection: true });
+
+    // The person's read marker never moved: two from before, plus the owner's and the agent's messages.
+    expect((await guest.query(api.spaces.list))[0].unread).toBe(3);
+    const membership = await t.run(ctx => ctx.db.query('memberships').withIndex('by_space_user', q => q.eq('spaceId', spaceId).eq('userId', ids.guest)).unique());
+    expect(membership!.lastReadSequence).toBe(1);
+    expect(await t.run(ctx => ctx.db.query('agentCheckpoints').collect())).toEqual([expect.objectContaining({ connectionId, spaceId, sequence: 4 })]);
+
+    // Another connection keeps its own checkpoint, starting from the person's unread messages.
+    const { token: other } = await connect(guest);
+    expect(texts((await tool(other, 'catch_up')).data.spaces[0])).toEqual(['Two', 'Three', 'Four']);
+    // Once a connection has caught up, reading in the app doesn't hide newer messages from it.
+    await say(owner, spaceId, 'Five');
+    await guest.mutation(api.spaces.markRead, { spaceId, sequence: 5 });
+    expect(texts((await tool(token, 'catch_up')).data.spaces[0])).toEqual(['Five']);
+  });
+
+  test('catch_up truncates per space and in total, and continues where it stopped', async () => {
+    const { t, owner, guest, ids, connect, tool, spaceId, otherSpace } = await setup();
+    for (let i = 1; i <= 7; i++) await say(owner, spaceId, `M${i}`);
+    const { token } = await connect(guest);
+    const pages = [];
+    for (let i = 0; i < 4; i++) pages.push((await tool(token, 'catch_up', { limit: 3 })).data.spaces);
+    expect(pages.map(p => p.map((s: Space) => [s.messages.map(m => m.sequence), s.has_more, s.checkpoint_sequence]))).toEqual([
+      [[[1, 2, 3], true, 3]], [[[4, 5, 6], true, 6]], [[[7], false, 7]], [],
+    ]);
+
+    // Three busy spaces share the per-call total; every one still moves forward on every call.
+    const third = await owner.mutation(api.spaces.create, { name: 'Third', symbol: '✳', color: 2 });
+    await t.run(async ctx => {
+      for (const id of [spaceId, otherSpace, third]) {
+        const space = (await ctx.db.get(id))!;
+        for (let i = 1; i <= 40; i++) await ctx.db.insert('messages', { spaceId: id, senderId: ids.guest, actorKind: 'human', body: `Bulk ${i}`, clientId: `bulk-${id}-${i}`, sequence: space.messageCount + i });
+        await ctx.db.patch(id, { messageCount: space.messageCount + 40 });
+      }
+    });
+    const { token: ownerAgent } = await connect(owner);
+    const seen = new Map<string, number[]>();
+    const sizes = [];
+    for (let i = 0; i < 3; i++) {
+      const spaces = (await tool(ownerAgent, 'catch_up', { limit: 50 })).data.spaces as Space[];
+      sizes.push(spaces.reduce((sum, s) => sum + s.messages.length, 0));
+      if (i === 0) expect(spaces.map(s => [s.messages.length > 0, s.has_more])).toEqual([[true, true], [true, true], [true, true]]);
+      for (const s of spaces) seen.set(s.space.id, [...(seen.get(s.space.id) ?? []), ...s.messages.map(m => m.sequence)]);
+    }
+    expect(sizes[0]).toBe(100);
+    expect(sizes.reduce((a, b) => a + b)).toBe(120);
+    // The owner had read their own 7 messages in Studio; nothing was skipped or repeated anywhere.
+    expect(seen.get(spaceId)).toEqual(Array.from({ length: 40 }, (_, i) => i + 8));
+    expect(seen.get(otherSpace)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
+    expect(seen.get(third)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
+  });
+
+  test('catch_up and search stay inside the grant and the person’s live membership', async () => {
+    const { t, owner, guest, ids, connect, tool, spaceId, otherSpace } = await setup();
+    await say(owner, spaceId, 'Launch plan for the studio');
+    await say(owner, otherSpace, 'Launch plan, private');
+    const { token: chosen } = await connect(owner, { spaceMode: 'selected', spaceIds: [spaceId] });
+    await t.run(async ctx => {
+      for (const m of await ctx.db.query('memberships').withIndex('by_user', q => q.eq('userId', ids.owner)).collect()) await ctx.db.patch(m._id, { lastReadSequence: 0 });
+    });
+    expect((await tool(chosen, 'catch_up')).data.spaces.map((s: Space) => s.space.id)).toEqual([spaceId]);
+    expect(await tool(chosen, 'catch_up', { space_id: otherSpace })).toMatchObject({ isError: true, text: expect.stringContaining('isn’t shared') });
+    expect((await tool(chosen, 'search_messages', { query: 'launch' })).data.results.map((r: { text: string }) => r.text)).toEqual(['Launch plan for the studio']);
+    expect(await tool(chosen, 'search_messages', { query: 'launch', space_id: otherSpace })).toMatchObject({ isError: true, text: expect.stringContaining('isn’t shared') });
+    const { token: all } = await connect(owner);
+    expect((await tool(all, 'search_messages', { query: 'launch' })).data.results).toHaveLength(2);
+
+    // The guest is in Studio only, then is removed from it.
+    const { token: guestAgent, connectionId } = await connect(guest);
+    expect((await tool(guestAgent, 'search_messages', { query: 'launch' })).data.results.map((r: { space: { id: string } }) => r.space.id)).toEqual([spaceId]);
+    expect(texts((await tool(guestAgent, 'catch_up')).data.spaces[0])).toEqual(['Launch plan for the studio']);
+    expect(await t.run(ctx => ctx.db.query('agentCheckpoints').withIndex('by_connection_space', q => q.eq('connectionId', connectionId)).collect())).toHaveLength(1);
+    await owner.mutation(api.members.remove, { spaceId, userId: ids.guest });
+    await say(owner, spaceId, 'Launch moved to Friday');
+    expect((await tool(guestAgent, 'catch_up')).data.spaces).toEqual([]);
+    expect(await tool(guestAgent, 'catch_up', { space_id: spaceId })).toMatchObject({ isError: true });
+    expect((await tool(guestAgent, 'search_messages', { query: 'launch' })).data.results).toEqual([]);
+    expect(await tool(guestAgent, 'search_messages', { query: 'launch', space_id: spaceId })).toMatchObject({ isError: true });
+    // Removal took the checkpoint with it, so rejoining starts again from the person's unread messages.
+    expect(await t.run(ctx => ctx.db.query('agentCheckpoints').withIndex('by_connection_space', q => q.eq('connectionId', connectionId)).collect())).toEqual([]);
+  });
+
+  test('checkpoints are deleted when the grant is narrowed or revoked', async () => {
+    const { t, owner, connect, tool, spaceId, otherSpace } = await setup();
+    const { token, connectionId } = await connect(owner);
+    const { token: keep } = await connect(owner);
+    await tool(token, 'catch_up');
+    await tool(keep, 'catch_up');
+    const rows = () => t.run(ctx => ctx.db.query('agentCheckpoints').withIndex('by_connection_space', q => q.eq('connectionId', connectionId)).collect());
+    expect((await rows()).map(r => r.spaceId).sort()).toEqual([spaceId, otherSpace].sort());
+    await owner.mutation(api.agents.update, { connectionId, name: 'Helper', scopes: ALL, spaceMode: 'selected', spaceIds: [spaceId] });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await rows()).map(r => r.spaceId)).toEqual([spaceId]);
+    await owner.mutation(api.agents.revoke, { connectionId });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await rows()).toEqual([]);
+    expect(await t.run(ctx => ctx.db.query('agentCheckpoints').collect())).toHaveLength(2);
+  });
+
+  test('search returns sequences for read_messages context, and validates its arguments', async () => {
+    const { owner, guest, ids, connect, tool, spaceId, otherSpace } = await setup();
+    await say(owner, spaceId, 'Morning all');
+    await say(guest, spaceId, 'The deploy is blocked on review');
+    await say(owner, spaceId, 'I will take a look');
+    await say(owner, otherSpace, 'Deploy notes for myself');
+    const { token } = await connect(owner);
+    const results = (await tool(token, 'search_messages', { query: 'deploy' })).data.results;
+    expect(results).toHaveLength(2);
+    const hit = results.find((r: { space: { id: string } }) => r.space.id === spaceId);
+    expect(hit).toMatchObject({ space: { id: spaceId, name: 'Studio' }, sequence: 2, sent_at: expect.any(String), text: 'The deploy is blocked on review', author: { kind: 'person', name: 'Guest', user_id: ids.guest, is_you: false } });
+    expect((await tool(token, 'read_messages', { space_id: spaceId, before_sequence: hit.sequence })).data.messages.map((m: { text: string }) => m.text)).toEqual(['Morning all']);
+    expect((await tool(token, 'read_messages', { space_id: spaceId, after_sequence: hit.sequence })).data.messages.map((m: { text: string }) => m.text)).toEqual(['I will take a look']);
+    expect((await tool(token, 'search_messages', { query: 'deploy', space_id: otherSpace })).data.results.map((r: { text: string }) => r.text)).toEqual(['Deploy notes for myself']);
+    expect((await tool(token, 'search_messages', { query: 'deploy', limit: 1 })).data.results).toHaveLength(1);
+    expect((await tool(token, 'search_messages', { query: 'nothing-like-this' })).data.results).toEqual([]);
+
+    expect(await tool(token, 'search_messages', {})).toMatchObject({ isError: true, text: expect.stringContaining('query') });
+    expect(await tool(token, 'search_messages', { query: '   ' })).toMatchObject({ isError: true, text: expect.stringContaining('empty') });
+    expect(await tool(token, 'search_messages', { query: 'x'.repeat(201) })).toMatchObject({ isError: true, text: expect.stringContaining('200') });
+    expect(await tool(token, 'search_messages', { query: Array(17).fill('word').join(' ') })).toMatchObject({ isError: true, text: expect.stringContaining('16 words') });
+    expect(await tool(token, 'search_messages', { query: 'deploy', space_id: spaceId, cursor: 'abc' })).toMatchObject({ isError: true, text: expect.stringContaining('not both') });
+    expect(await tool(token, 'catch_up', { peek: 'yes' })).toMatchObject({ isError: true, text: expect.stringContaining('peek') });
+    expect(await tool(token, 'catch_up', { limit: 0 })).toMatchObject({ isError: true, text: expect.stringContaining('limit') });
+    expect(await tool(token, 'catch_up', { since: 3 })).toMatchObject({ isError: true, text: expect.stringContaining('since') });
   });
 });
 

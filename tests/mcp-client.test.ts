@@ -82,7 +82,7 @@ describe('Common through the official MCP client', () => {
       expect(client.getServerVersion()?.name.toLowerCase()).toContain('common');
       expect(transport.protocolVersion).toBe('2025-11-25');
       const names = (await client.listTools()).tools.map(tool => tool.name);
-      expect(names).toEqual(expect.arrayContaining(['whoami', 'list_spaces', 'read_messages', 'send_message']));
+      expect(names).toEqual(expect.arrayContaining(['whoami', 'list_spaces', 'read_messages', 'catch_up', 'search_messages', 'send_message']));
       expect(names).not.toContain('create_space');
       expect(names).not.toContain('update_profile');
       const identity = await client.callTool({ name: 'whoami', arguments: {} });
