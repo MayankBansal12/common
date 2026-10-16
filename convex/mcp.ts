@@ -51,6 +51,12 @@ function int(args: Args, key: string, min: number, max: number): number | undefi
   if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) throw new ConvexError(`"${key}" must be a whole number from ${min} to ${max}.`);
   return value;
 }
+function bool(args: Args, key: string): boolean | undefined {
+  const value = args[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'boolean') throw new ConvexError(`"${key}" must be true or false.`);
+  return value;
+}
 function spaceId(ctx: QueryCtx, args: Args) {
   const id = ctx.db.normalizeId('spaces', str(args, 'space_id', { max: 64 })!);
   if (!id) throw new ConvexError('That space isn’t shared with this connection.');
@@ -76,6 +82,34 @@ async function spacesFor(ctx: QueryCtx, actor: AgentActor, cursor: string | null
   const page = await ctx.db.query('memberships').withIndex('by_user', q => q.eq('userId', user._id)).paginate({ numItems: 100, cursor });
   const rows = await Promise.all(page.page.map(live));
   return { rows: rows.filter(r => r !== null), cursor: page.isDone ? null : page.continueCursor };
+}
+
+/** One space by ID, or a page of every space this connection can use. */
+async function spacesToScan(ctx: QueryCtx, actor: AgentActor, args: Args) {
+  const cursor = str(args, 'cursor', { optional: true, max: 2000 }) ?? null;
+  if (args.space_id === undefined || args.space_id === null) return spacesFor(ctx, actor, cursor);
+  if (cursor !== null) throw new ConvexError('Use space_id or cursor, not both.');
+  return { rows: [await requireAgentSpace(ctx, actor, spaceId(ctx, args))], cursor: null };
+}
+const byActivity = (a: { space: Doc<'spaces'> }, b: { space: Doc<'spaces'> }) => b.space.updatedAt - a.space.updatedAt;
+
+// A catch_up page holds at most 100 spaces (see spacesFor), so this total still gives every space with
+// news at least one message, and each call moves every one of them forward.
+const CATCH_UP_TOTAL = 100;
+// Search filters match one space at a time, so searching everywhere runs one query per space in the
+// page, together reading at most this many results.
+const SEARCH_READS = 200;
+const SEARCH_TERMS = 16;
+
+/** Messages as agents see them, each author a person or an agent acting for one. `names` can be shared across calls. */
+async function messagesFor(ctx: QueryCtx, actor: AgentActor, messages: Doc<'messages'>[], names = new Map<Id<'users'>, string>()) {
+  for (const m of messages) if (!names.has(m.senderId)) names.set(m.senderId, (await person(ctx, m.senderId)).name);
+  return messages.map(m => ({
+    id: m._id, sequence: m.sequence, sent_at: iso(m._creationTime), text: m.body,
+    author: m.actorKind === 'agent'
+      ? { kind: 'agent', agent_name: m.agentName ?? 'Agent', on_behalf_of: names.get(m.senderId), user_id: m.senderId, is_this_connection: m.agentId === actor.connection._id }
+      : { kind: 'person', name: names.get(m.senderId), user_id: m.senderId, is_you: m.senderId === actor.user._id },
+  }));
 }
 
 export const TOOLS: Tool[] = [
@@ -157,19 +191,109 @@ export const TOOLS: Tool[] = [
       const more = rows.length > limit;
       const page = rows.slice(0, limit);
       if (after === undefined) page.reverse();
-      const names = new Map<Id<'users'>, string>();
-      for (const m of page) if (!names.has(m.senderId)) names.set(m.senderId, (await person(ctx, m.senderId)).name);
       return {
         space: { id: space._id, name: space.name },
-        messages: page.map(m => ({
-          id: m._id, sequence: m.sequence, sent_at: iso(m._creationTime), text: m.body,
-          author: m.actorKind === 'agent'
-            ? { kind: 'agent', agent_name: m.agentName ?? 'Agent', on_behalf_of: names.get(m.senderId), user_id: m.senderId, is_this_connection: m.agentId === actor.connection._id }
-            : { kind: 'person', name: names.get(m.senderId), user_id: m.senderId, is_you: m.senderId === actor.user._id },
-        })),
+        messages: await messagesFor(ctx, actor, page),
         has_more: more,
         ...(after === undefined ? { next_before_sequence: more && page[0] ? page[0].sequence : null } : { next_after_sequence: page.at(-1)?.sequence ?? after }),
       };
+    },
+  },
+  {
+    name: 'catch_up',
+    title: 'Catch up',
+    description: 'Shows what’s new since this connection last caught up, grouped by space, oldest first within each space. The first time, a space starts from the person’s unread messages. Each call moves this connection’s checkpoint to the last message it returned, so nothing is skipped: when a space has has_more, call again to continue. Pass peek to look without moving it. Only spaces with new messages are listed. If next_cursor is not null, call again with it for more spaces. This never marks anything read for the person.',
+    scopes: ['messages:read'],
+    // It writes this connection's own checkpoints, so it runs as a mutation. But it changes nothing a
+    // person sees and never marks anything read, so it stays readOnlyHint: clients that ask for
+    // confirmation on every other tool (ChatGPT does) then don't ask each time the agent catches up.
+    write: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        space_id: { ...spaceIdProp, description: 'Only catch up on this space. A space ID from list_spaces.' },
+        limit: { type: 'integer', minimum: 1, maximum: 50, default: 20, description: `Most messages per space (1–50). Spaces share ${CATCH_UP_TOTAL} messages per call.` },
+        peek: { type: 'boolean', default: false, description: 'Look without moving the checkpoint.' },
+        cursor: { type: 'string', description: 'next_cursor from a previous call.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    async run(ctx, actor, args) {
+      only(args, ['space_id', 'limit', 'peek', 'cursor']);
+      const limit = int(args, 'limit', 1, 50) ?? 20;
+      const peek = bool(args, 'peek') ?? false;
+      const { rows, cursor } = await spacesToScan(ctx, actor, args);
+      const scanned = await Promise.all(rows.map(async ({ space, membership }) => {
+        const checkpoint = await ctx.db.query('agentCheckpoints').withIndex('by_connection_space', q => q.eq('connectionId', actor.connection._id).eq('spaceId', space._id)).unique();
+        return { space, checkpoint, from: checkpoint?.sequence ?? membership.lastReadSequence };
+      }));
+      // Spaces with news split the budget, most recently active first.
+      const fresh = scanned.filter(s => s.space.messageCount > s.from).sort(byActivity);
+      const reached = new Map<Id<'spaces'>, number>();
+      const names = new Map<Id<'users'>, string>();
+      const spaces = [];
+      let budget = CATCH_UP_TOTAL;
+      for (const [i, { space, from }] of fresh.entries()) {
+        const take = Math.max(1, Math.min(limit, Math.floor(budget / (fresh.length - i))));
+        const page = await ctx.db.query('messages').withIndex('by_space_sequence', q => q.eq('spaceId', space._id).gt('sequence', from)).order('asc').take(take);
+        budget -= page.length;
+        const to = page.at(-1)?.sequence ?? from;
+        reached.set(space._id, to);
+        spaces.push({
+          space: { id: space._id, name: space.name },
+          messages: await messagesFor(ctx, actor, page, names),
+          has_more: to < space.messageCount,
+          checkpoint_sequence: peek ? from : to,
+          latest_sequence: space.messageCount,
+        });
+      }
+      // Every scanned space gets a checkpoint, so later catch-ups start here even after the person reads on.
+      if (!peek) {
+        const m = asMutation(ctx);
+        for (const { space, checkpoint, from } of scanned) {
+          const sequence = reached.get(space._id) ?? from;
+          if (!checkpoint) await m.db.insert('agentCheckpoints', { connectionId: actor.connection._id, spaceId: space._id, sequence });
+          else if (checkpoint.sequence !== sequence) await m.db.patch(checkpoint._id, { sequence });
+        }
+      }
+      return { spaces, next_cursor: cursor };
+    },
+  },
+  {
+    name: 'search_messages',
+    title: 'Search messages',
+    description: 'Finds messages containing the given words, in one space or across the spaces shared with this connection. Results are ranked by relevance within each space; across spaces, every space’s best match comes before any second-best. Each result includes its sequence: pass it to read_messages as before_sequence or after_sequence to read the conversation around it. If next_cursor is not null, call again with it to search more spaces.',
+    scopes: ['messages:read'],
+    write: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', minLength: 1, maxLength: 200, description: `Words to look for (up to ${SEARCH_TERMS}). The last word also matches as a prefix.` },
+        space_id: { ...spaceIdProp, description: 'Only search this space. A space ID from list_spaces.' },
+        limit: { type: 'integer', minimum: 1, maximum: 50, default: 20, description: 'How many results to return (1–50).' },
+        cursor: { type: 'string', description: 'next_cursor from a previous call.' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    async run(ctx, actor, args) {
+      only(args, ['query', 'space_id', 'limit', 'cursor']);
+      const query = str(args, 'query', { max: 200 })!.trim();
+      if (!query) throw new ConvexError('"query" can’t be empty.');
+      if (query.split(/\s+/).length > SEARCH_TERMS) throw new ConvexError(`"query" can have at most ${SEARCH_TERMS} words.`);
+      const limit = int(args, 'limit', 1, 50) ?? 20;
+      const { rows, cursor } = await spacesToScan(ctx, actor, args);
+      const searched = rows.filter(r => r.space.messageCount > 0).sort(byActivity);
+      const each = Math.min(limit, Math.max(1, Math.floor(SEARCH_READS / Math.max(1, searched.length))));
+      const hits = await Promise.all(searched.map(({ space }) => ctx.db.query('messages').withSearchIndex('search_body', q => q.search('body', query).eq('spaceId', space._id)).take(each)));
+      // Interleave by rank: each space's best match, then each second-best, and so on.
+      const ranked: { space: Doc<'spaces'>; message: Doc<'messages'> }[] = [];
+      for (let rank = 0; rank < each; rank++) hits.forEach((list, i) => list[rank] && ranked.push({ space: searched[i].space, message: list[rank] }));
+      const top = ranked.slice(0, limit);
+      const messages = await messagesFor(ctx, actor, top.map(r => r.message));
+      return { results: top.map(({ space }, i) => ({ space: { id: space._id, name: space.name }, ...messages[i] })), next_cursor: cursor };
     },
   },
   {

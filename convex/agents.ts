@@ -5,7 +5,7 @@ import { getAuthUserId } from '@convex-dev/auth/server';
 import { ConvexError, v } from 'convex/values';
 import { requireUser } from './lib/access';
 import {
-  CODE_TTL, cleanAgentName, cleanGrantSpaces, cleanScopes, hashSecret, issuer, makeRoomForConnection, randomSecret, revokeConnection, type Scope,
+  CODE_TTL, cleanAgentName, cleanGrantSpaces, cleanScopes, grantCovers, hashSecret, issuer, makeRoomForConnection, randomSecret, revokeConnection, type Scope,
 } from './lib/agents';
 
 /** Agent connections, managed by the person who granted them. No secrets or hashes ever leave the server. */
@@ -48,6 +48,7 @@ export const update = mutation({ args: { connectionId: v.id('agentConnections'),
   const scopes = cleanScopes(args.scopes);
   if (connection.requestedScopes && scopes.some(s => !connection.requestedScopes!.includes(s))) throw new ConvexError('This agent didn’t ask for that permission. Reconnect it to grant more.');
   await ctx.db.patch(connection._id, { name: cleanAgentName(args.name), scopes, spaceMode: args.spaceMode, spaceIds: await cleanGrantSpaces(ctx, user._id, args.spaceMode, args.spaceIds) });
+  if (args.spaceMode === 'selected') await ctx.scheduler.runAfter(0, internal.agents.pruneCheckpoints, { connectionId: connection._id, cursor: null });
 }});
 
 export const revoke = mutation({ args: { connectionId: v.id('agentConnections') }, handler: async (ctx, { connectionId }) => {
@@ -56,11 +57,21 @@ export const revoke = mutation({ args: { connectionId: v.id('agentConnections') 
   if (connection && connection.userId === user._id) await revokeConnection(ctx, connection);
 }});
 
-/** Deletes a revoked grant's leftover token rows, a batch at a time. */
+/** Deletes a revoked grant's leftover token and catch-up checkpoint rows, a batch at a time. */
 export const sweepTokens = internalMutation({ args: { connectionId: v.id('agentConnections') }, handler: async (ctx, { connectionId }) => {
-  const batch = await ctx.db.query('agentTokens').withIndex('by_connection', q => q.eq('connectionId', connectionId)).take(100);
-  for (const token of batch) await ctx.db.delete(token._id);
-  if (batch.length === 100) await ctx.scheduler.runAfter(0, internal.agents.sweepTokens, { connectionId });
+  const tokens = await ctx.db.query('agentTokens').withIndex('by_connection', q => q.eq('connectionId', connectionId)).take(100);
+  const checkpoints = await ctx.db.query('agentCheckpoints').withIndex('by_connection_space', q => q.eq('connectionId', connectionId)).take(100);
+  for (const row of [...tokens, ...checkpoints]) await ctx.db.delete(row._id);
+  if (tokens.length === 100 || checkpoints.length === 100) await ctx.scheduler.runAfter(0, internal.agents.sweepTokens, { connectionId });
+}});
+
+/** After a grant is narrowed to chosen spaces, deletes checkpoints for spaces it no longer covers, a page at a time. */
+export const pruneCheckpoints = internalMutation({ args: { connectionId: v.id('agentConnections'), cursor: v.union(v.string(), v.null()) }, handler: async (ctx, { connectionId, cursor }) => {
+  const connection = await ctx.db.get(connectionId);
+  if (!connection) return; // Revoked meanwhile: sweepTokens removes the rest.
+  const page = await ctx.db.query('agentCheckpoints').withIndex('by_connection_space', q => q.eq('connectionId', connectionId)).paginate({ numItems: 100, cursor });
+  for (const row of page.page) if (!grantCovers(connection, row.spaceId)) await ctx.db.delete(row._id);
+  if (!page.isDone) await ctx.scheduler.runAfter(0, internal.agents.pruneCheckpoints, { connectionId, cursor: page.continueCursor });
 }});
 
 // Personal access tokens, for MCP clients that can't sign in through the browser.

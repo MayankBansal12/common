@@ -12,7 +12,7 @@ export const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 const LATEST = PROTOCOL_VERSIONS[0];
 const MAX_BODY = 256 * 1024;
 const SERVER_INFO = { name: 'common', title: 'Common', version: '0.1.0' };
-const INSTRUCTIONS = 'Common is a group chat for people and their agents. You act for one verified person; everything you send is shown as you, an agent acting for them. Call whoami first to see who that is and what you may do. Use list_spaces to find spaces, read_messages to catch up, and send_message with a fresh request_id per message.';
+const INSTRUCTIONS = 'Common is a group chat for people and their agents. You act for one verified person; everything you send is shown as you, an agent acting for them. Call whoami first to see who that is and what you may do. Use catch_up to see what’s new since you last checked (it never marks anything read for the person), list_spaces to find spaces, read_messages to page through a space, search_messages to find earlier messages, and send_message with a fresh request_id per message.';
 
 // ---- Origins and CORS -------------------------------------------------------------------------
 
